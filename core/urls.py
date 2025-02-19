@@ -21,7 +21,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from products.views import ProductViewSet, CategoryViewSet, get_categories
-from orders.views import OrderViewSet, CartViewSet
+from orders.views import OrderViewSet, CartViewSet, add_item
 from accounts.views import log_in, log_out, get_user, register
 
 # Create a router and register our viewsets with it
@@ -40,4 +40,12 @@ urlpatterns = [
     path("auth/user/", get_user, name="get_user"),
     path("auth/register/", register, name="register"),
     path("api/categories/", get_categories, name="get_categories"),
+    path("api/carts/", CartViewSet.as_view({"get": "list", "post": "create"}), name="cart-list"),
+    path("api/carts/add/", add_item, name="add-to-cart"),
+    path("api/carts/<int:pk>/", CartViewSet.as_view({"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}), name="cart-detail"),
+    path(
+        "api/orders/<int:pk>/cancel/",
+        OrderViewSet.as_view({"post": "cancel_order"}),
+        name="cancel_order",
+    ),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

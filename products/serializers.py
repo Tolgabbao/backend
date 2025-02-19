@@ -1,16 +1,15 @@
 from rest_framework import serializers
 from .models import Product, Category, ProductRating, ProductComment
 
-
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ["id", "name", "description"]
 
-
 class ProductSerializer(serializers.ModelSerializer):
     average_rating = serializers.FloatField(read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -27,15 +26,20 @@ class ProductSerializer(serializers.ModelSerializer):
             "category_name",
             "distributor_info",
             "average_rating",
+            "image",
+            "image_url",
         ]
 
+    def get_image_url(self, obj):
+        if (obj.image):
+            return self.context['request'].build_absolute_uri(obj.image.url)
+        return None
 
 class ProductRatingSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductRating
         fields = ["id", "product", "rating", "created_at"]
         read_only_fields = ["user"]
-
 
 class ProductCommentSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.username", read_only=True)

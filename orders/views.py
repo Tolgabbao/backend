@@ -1,5 +1,5 @@
-from rest_framework import viewsets, permissions
-from rest_framework.decorators import action
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from .models import Order, Cart, CartItem
 from products.models import Product
@@ -36,27 +36,31 @@ class CartViewSet(viewsets.ModelViewSet):
             return Cart.objects.filter(user=self.request.user)
         return Cart.objects.filter(session_id=self.request.session.session_key)
 
-    @action(detail=True, methods=["post"])
-    def add_item(self, request, pk=None):
-        cart = self.get_object()
-        product_id = request.data.get("product_id")
-        quantity = request.data.get("quantity", 1)
 
-        try:
-            product = Product.objects.get(id=product_id)
-            if product.stock_quantity < quantity:
-                return Response({"error": "Not enough stock available"}, status=400)
+@api_view(['POST'])
+def add_item(request):
+    product_id = request.data.get('product_id')
+    quantity = request.data.get('quantity', 1)
 
-            cart_item, created = CartItem.objects.get_or_create(
-                cart=cart, product=product, defaults={"quantity": quantity}
-            )
+    try:
+        product = Product.objects.get(id=product_id)
+        cart = Cart.objects.get_or_create(user=request.user)[0]
 
-            if not created:
-                cart_item.quantity += quantity
-                cart_item.save()
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            product=product,
+            defaults={'quantity': quantity}
+        )
 
-            serializer = CartSerializer(cart)
-            return Response(serializer.data)
+        if not created:
+            cart_item.quantity += quantity
+            cart_item.save()
 
-        except Product.DoesNotExist:
-            return Response({"error": "Product not found"}, status=404)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
+
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )

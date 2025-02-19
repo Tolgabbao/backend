@@ -42,11 +42,14 @@ def log_out(request):
 @api_view(["GET"])
 def get_user(request):
     if request.user.is_authenticated:
-        return Response({"username": request.user.username})
+        return Response({"username": request.user.username,
+                         "email": request.user.email,
+                         "date_joined": request.user.date_joined,})
     return Response({"message": "User not authenticated"}, status=400)
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def register(request):
     username = request.data.get("username")
     password = request.data.get("password")
