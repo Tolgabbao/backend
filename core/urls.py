@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -25,19 +26,18 @@ from accounts.views import log_in, log_out, get_user, register
 
 # Create a router and register our viewsets with it
 router = DefaultRouter()
-router.register(r'products', ProductViewSet)
-router.register(r'categories', CategoryViewSet)
-router.register(r'orders', OrderViewSet, basename='order')
-router.register(r'carts', CartViewSet, basename='cart')
+router.register(r"products", ProductViewSet)
+router.register(r"categories", CategoryViewSet)
+router.register(r"orders", OrderViewSet, basename="order")
+router.register(r"carts", CartViewSet, basename="cart")
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include(router.urls)),
-    path('api/auth/', include('rest_framework.urls')),
-    path('auth/login/', log_in, name='login'),
-    path('auth/logout/', log_out, name='logout'),
-    path('auth/user/', get_user, name='get_user'),
-    path('auth/register/', register, name='register'),
-    path('api/categories/', get_categories, name='get_categories'),
-
+    path("admin/", admin.site.urls),
+    path("api/", include(router.urls)),
+    path("api/auth/", include("rest_framework.urls")),
+    path("auth/login/", log_in, name="login"),
+    path("auth/logout/", log_out, name="logout"),
+    path("auth/user/", get_user, name="get_user"),
+    path("auth/register/", register, name="register"),
+    path("api/categories/", get_categories, name="get_categories"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

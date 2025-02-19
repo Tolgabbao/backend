@@ -1,9 +1,10 @@
-from django.shortcuts import render
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Order, Cart
+from .models import Order, Cart, CartItem
+from products.models import Product
 from .serializers import OrderSerializer, CartSerializer
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
@@ -15,17 +16,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Order.objects.filter(user=user)
         return Order.objects.all()
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def cancel_order(self, request, pk=None):
         order = self.get_object()
-        if order.status != 'PROCESSING':
+        if order.status != "PROCESSING":
             return Response(
-                {'error': 'Can only cancel orders in processing status'},
-                status=400
+                {"error": "Can only cancel orders in processing status"}, status=400
             )
-        order.status = 'CANCELLED'
+        order.status = "CANCELLED"
         order.save()
-        return Response({'status': 'order cancelled'})
+        return Response({"status": "order cancelled"})
+
 
 class CartViewSet(viewsets.ModelViewSet):
     serializer_class = CartSerializer
@@ -35,35 +36,27 @@ class CartViewSet(viewsets.ModelViewSet):
             return Cart.objects.filter(user=self.request.user)
         return Cart.objects.filter(session_id=self.request.session.session_key)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def add_item(self, request, pk=None):
         cart = self.get_object()
-        product_id = request.data.get('product_id')
-        quantity = request.data.get('quantity', 1)
-        
+        product_id = request.data.get("product_id")
+        quantity = request.data.get("quantity", 1)
+
         try:
             product = Product.objects.get(id=product_id)
             if product.stock_quantity < quantity:
-                return Response(
-                    {'error': 'Not enough stock available'},
-                    status=400
-                )
-            
+                return Response({"error": "Not enough stock available"}, status=400)
+
             cart_item, created = CartItem.objects.get_or_create(
-                cart=cart,
-                product=product,
-                defaults={'quantity': quantity}
+                cart=cart, product=product, defaults={"quantity": quantity}
             )
-            
+
             if not created:
                 cart_item.quantity += quantity
                 cart_item.save()
-            
+
             serializer = CartSerializer(cart)
             return Response(serializer.data)
-            
+
         except Product.DoesNotExist:
-            return Response(
-                {'error': 'Product not found'},
-                status=404
-            )
+            return Response({"error": "Product not found"}, status=404)
