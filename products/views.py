@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, filters
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.http import HttpResponse
 
 from orders.models import Order
 from .models import Product, Category, ProductRating, ProductComment
@@ -30,6 +31,13 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description"]
     filterset_fields = ["category"]
     ordering_fields = ["price", "average_rating"]
+
+    @action(detail=True, methods=["get"])
+    def image(self, request, pk=None):
+        product = self.get_object()
+        if product.image_data:
+            return HttpResponse(product.image_data, content_type=product.image_type)
+        return HttpResponse(status=404)
 
     @action(detail=True, methods=["post"])
     def rate_product(self, request, pk=None):

@@ -71,6 +71,12 @@ docker-compose exec backend python manage.py createsuperuser
 - `/api/products/<id>/` - Retrieve, update, and delete products
 - `/api/categories/` - List and create categories
 
+#### Image Storage
+Images are stored directly in PostgreSQL using BinaryField, which allows for:
+- Direct database backup including all images
+- No need for separate file storage system
+- Consistent data handling across different environments
+
 ### Orders
 - `/api/cart/` - Shopping cart operations
 - `/api/orders/` - List and create orders
@@ -116,4 +122,3 @@ docker-compose restart backend
 1. Create a new branch for your feature
 2. Make your changes
 3. Submit a pull request
-

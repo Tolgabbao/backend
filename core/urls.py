@@ -40,9 +40,24 @@ urlpatterns = [
     path("auth/user/", get_user, name="get_user"),
     path("auth/register/", register, name="register"),
     path("api/categories/", get_categories, name="get_categories"),
-    path("api/carts/", CartViewSet.as_view({"get": "list", "post": "create"}), name="cart-list"),
+    path(
+        "api/carts/",
+        CartViewSet.as_view({"get": "list", "post": "create"}),
+        name="cart-list",
+    ),
     path("api/carts/add/", add_item, name="add-to-cart"),
-    path("api/carts/<int:pk>/", CartViewSet.as_view({"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}), name="cart-detail"),
+    path(
+        "api/carts/<int:pk>/",
+        CartViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="cart-detail",
+    ),
     path(
         "api/orders/<int:pk>/cancel/",
         OrderViewSet.as_view({"post": "cancel_order"}),

@@ -26,8 +26,10 @@ class Product(models.Model):
     warranty_months = models.IntegerField(default=12)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     distributor_info = models.TextField()
-    is_visible = models.BooleanField(default=False)  # For sales manager approval
-    image = models.ImageField(upload_to='products/', null=True, blank=True)
+    is_visible = models.BooleanField(default=False)
+    image_data = models.BinaryField(null=True, blank=True)
+    image_name = models.CharField(max_length=255, null=True, blank=True)
+    image_type = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -36,7 +38,7 @@ class Product(models.Model):
 
     @property
     def average_rating(self):
-        return self.ratings.aggregate(Avg('rating'))['rating__avg']
+        return self.ratings.aggregate(Avg("rating"))["rating__avg"]
 
 
 class ProductRating(models.Model):

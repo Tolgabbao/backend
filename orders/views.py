@@ -37,19 +37,17 @@ class CartViewSet(viewsets.ModelViewSet):
         return Cart.objects.filter(session_id=self.request.session.session_key)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def add_item(request):
-    product_id = request.data.get('product_id')
-    quantity = request.data.get('quantity', 1)
+    product_id = request.data.get("product_id")
+    quantity = request.data.get("quantity", 1)
 
     try:
         product = Product.objects.get(id=product_id)
         cart = Cart.objects.get_or_create(user=request.user)[0]
 
         cart_item, created = CartItem.objects.get_or_create(
-            cart=cart,
-            product=product,
-            defaults={'quantity': quantity}
+            cart=cart, product=product, defaults={"quantity": quantity}
         )
 
         if not created:
@@ -61,6 +59,5 @@ def add_item(request):
 
     except Product.DoesNotExist:
         return Response(
-            {'error': 'Product not found'},
-            status=status.HTTP_404_NOT_FOUND
+            {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
         )
