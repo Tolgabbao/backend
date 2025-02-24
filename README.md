@@ -33,16 +33,7 @@ git clone <repository-url>
 cd <project-directory>
 ```
 
-2. Create a `.env` file in the root directory with the necessary environment variables:
-```env
-DEBUG=1
-SECRET_KEY=your-secret-key
-POSTGRES_DB=your-db-name
-POSTGRES_USER=your-db-user
-POSTGRES_PASSWORD=your-db-password
-```
-
-3. Build and start the Docker containers:
+2. Build and start the Docker containers, recommended to download the frontend as well before this:
 ```bash
 docker-compose up -d --build
 ```
