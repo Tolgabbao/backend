@@ -28,7 +28,7 @@ export const authApi = {
 
 
 @api_view(["POST"])
-def login(request):
+def log_in(request):
     email = request.data.get("email")
     password = request.data.get("password")
 
@@ -58,7 +58,7 @@ def status(request):
 
 
 @api_view(["POST"])
-def logout(request):
+def log_out(request):
     logout(request)
     return Response({"message": "Logout successful"})
 

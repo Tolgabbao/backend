@@ -31,33 +31,58 @@ class OrderViewSet(viewsets.ModelViewSet):
 class CartViewSet(viewsets.ModelViewSet):
     serializer_class = CartSerializer
 
+    @action(detail=False, methods=["post"], url_path="add")
+    def add_item(self, request):
+        product_id = request.data.get("product_id")
+        quantity = request.data.get("quantity", 1)
+
+        try:
+            product = Product.objects.get(id=product_id)
+            cart = Cart.objects.get_or_create(user=request.user)[0]
+
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart, product=product, defaults={"quantity": quantity}
+            )
+
+            if not created:
+                cart_item.quantity += quantity
+                cart_item.save()
+
+            serializer = CartSerializer(cart)
+            return Response(serializer.data)
+
+        except Product.DoesNotExist:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=["post"], url_path="remove")
+    def remove_item(self, request):
+        product_id = request.data.get("product_id")
+        try:
+            product = Product.objects.get(id=product_id)
+            cart = Cart.objects.get_or_create(user=request.user)[0]
+
+            cart_item = CartItem.objects.filter(cart=cart, product=product).first()
+            if cart_item:
+                cart_item.delete()
+
+            serializer = CartSerializer(cart)
+            return Response(serializer.data)
+
+        except Product.DoesNotExist:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=["get"], url_path="items")
+    def get_items(self, request):
+        cart = Cart.objects.get_or_create(user=request.user)[0]
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
+
     def get_queryset(self):
         if self.request.user.is_authenticated:
             return Cart.objects.filter(user=self.request.user)
         return Cart.objects.filter(session_id=self.request.session.session_key)
 
-
-@api_view(["POST"])
-def add_item(request):
-    product_id = request.data.get("product_id")
-    quantity = request.data.get("quantity", 1)
-
-    try:
-        product = Product.objects.get(id=product_id)
-        cart = Cart.objects.get_or_create(user=request.user)[0]
-
-        cart_item, created = CartItem.objects.get_or_create(
-            cart=cart, product=product, defaults={"quantity": quantity}
-        )
-
-        if not created:
-            cart_item.quantity += quantity
-            cart_item.save()
-
-        serializer = CartSerializer(cart)
-        return Response(serializer.data)
-
-    except Product.DoesNotExist:
-        return Response(
-            {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
-        )
