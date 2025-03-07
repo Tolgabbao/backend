@@ -43,5 +43,9 @@ urlpatterns = [
     path("api/carts/add/", CartViewSet.add_item, name="add_item"),
     path("api/carts/remove/", CartViewSet.remove_item, name="remove_item"),
     path("api/carts/items/", CartViewSet.get_items, name="get_items"),
-    path("api/products/add-product/", ProductViewSet.create_product_api, name="add_product"),
+    path(
+        "api/products/add-product/",
+        ProductViewSet.create_product_api,
+        name="add_product",
+    ),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

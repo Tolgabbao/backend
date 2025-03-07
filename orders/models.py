@@ -49,19 +49,19 @@ class Cart(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(user__isnull=False, session_id__isnull=True) | 
-                    models.Q(user__isnull=True, session_id__isnull=False)
+                    models.Q(user__isnull=False, session_id__isnull=True)
+                    | models.Q(user__isnull=True, session_id__isnull=False)
                 ),
-                name="user_xor_session_id"
+                name="user_xor_session_id",
             )
         ]
 
 
 class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, related_name='items', on_delete=models.CASCADE)
+    cart = models.ForeignKey(Cart, related_name="items", on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
-    
+
     @property
     def subtotal(self):
         return self.product.price * self.quantity
@@ -70,13 +70,13 @@ class CartItem(models.Model):
         return f"{self.quantity} x {self.product.name}"
 
 
-@receiver(post_save, sender='orders.Order')
+@receiver(post_save, sender="orders.Order")
 def update_product_sales_count(sender, instance, **kwargs):
     """
     When an order is delivered, update the sales count for all products in the order
     """
-    if instance.status == 'DELIVERED':
+    if instance.status == "DELIVERED":
         for item in instance.items.all():
             product = item.product
             product.sales_count += item.quantity
-            product.save(update_fields=['sales_count'])
+            product.save(update_fields=["sales_count"])

@@ -1,10 +1,10 @@
 from django.http import HttpResponse
-import time
 import redis
 from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class RateLimitMiddleware:
     def __init__(self, get_response):
@@ -19,18 +19,20 @@ class RateLimitMiddleware:
 
     def __call__(self, request):
         # Skip rate limiting for admin or if Redis is down
-        if request.path.startswith('/admin/') or not self.redis_enabled:
+        if request.path.startswith("/admin/") or not self.redis_enabled:
             return self.get_response(request)
 
         # Get client IP
         ip = self.get_client_ip(request)
-        key = f'rate_limit:{ip}'
+        key = f"rate_limit:{ip}"
 
         try:
             # Check if rate limit exceeded
             current = self.redis.get(key)
             if current and int(current) > self.rate_limit:
-                return HttpResponse('Rate limit exceeded. Please try again later.', status=429)
+                return HttpResponse(
+                    "Rate limit exceeded. Please try again later.", status=429
+                )
 
             # Increment request count
             pipe = self.redis.pipeline()
@@ -44,9 +46,9 @@ class RateLimitMiddleware:
         return self.get_response(request)
 
     def get_client_ip(self, request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
+            ip = x_forwarded_for.split(",")[0]
         else:
-            ip = request.META.get('REMOTE_ADDR')
+            ip = request.META.get("REMOTE_ADDR")
         return ip

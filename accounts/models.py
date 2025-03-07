@@ -17,7 +17,14 @@ class User(AbstractUser):
 
     @property
     def is_admin(self):
-        return 1 if (self.user_type in ["SALES_MANAGER", "PRODUCT MANAGER", "ADMIN"] or super().is_staff) else 0
+        return (
+            1
+            if (
+                self.user_type in ["SALES_MANAGER", "PRODUCT MANAGER", "ADMIN"]
+                or super().is_staff
+            )
+            else 0
+        )
 
     def is_customer(self):
         return self.user_type == "CUSTOMER"
