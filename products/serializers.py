@@ -6,10 +6,19 @@ from .models import Product, Category, ProductRating, ProductComment
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "description"]
+        fields = "__all__"
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(), 
+        source='category', 
+        write_only=True,
+        required=False
+    )
+    average_rating = serializers.FloatField(read_only=True)
+    is_visible = serializers.BooleanField(default=True)
     image = serializers.CharField(required=False, write_only=True)
     image_url = serializers.SerializerMethodField()
 
@@ -26,16 +35,21 @@ class ProductSerializer(serializers.ModelSerializer):
             "cost_price",
             "warranty_months",
             "category",
+            "category_id",
             "distributor_info",
             "is_visible",
+            "average_rating",
             "image",
             "image_url",
             "created_at",
             "updated_at",
         ]
+        extra_kwargs = {
+            'is_visible': {'write_only': True} 
+        }
 
     def get_image_url(self, obj):
-        if obj.image_data:
+        if (obj.image_data):
             return f"/api/products/{obj.id}/image/"
         return None
 
@@ -60,6 +74,15 @@ class ProductSerializer(serializers.ModelSerializer):
             instance.image_type = f"image/{ext}"
             instance.image_name = f"product_image.{ext}"
         return super().update(instance, validated_data)
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Ensure is_visible is always present in the response
+        if 'is_visible' not in representation:
+            representation['is_visible'] = instance.is_visible if hasattr(instance, 'is_visible') else False
+            
+        return representation
 
 
 class ProductRatingSerializer(serializers.ModelSerializer):

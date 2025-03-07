@@ -3,29 +3,6 @@ from rest_framework.response import Response
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 
-"""
-export const authApi = {
-  login: async (email: string, password: string) => {
-    const response = await fetch(`${BASE_URL}/api/auth/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
-    });
-
-    if (!response.ok) throw new Error('Login failed');
-    return response.json();
-  },
-
-  checkAuthStatus: async () => {
-    const response = await fetch(`${BASE_URL}/api/auth/status/`, {
-      credentials: 'include'
-    });
-    return response.ok;
-  }
-};
-"""
-
 
 @api_view(["POST"])
 def log_in(request):

@@ -15,6 +15,10 @@ class User(AbstractUser):
     address = models.TextField()
     phone = models.CharField(max_length=15, blank=True)
 
+    @property
+    def is_admin(self):
+        return 1 if (self.user_type in ["SALES_MANAGER", "PRODUCT MANAGER", "ADMIN"] or super().is_staff) else 0
+
     def is_customer(self):
         return self.user_type == "CUSTOMER"
 

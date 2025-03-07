@@ -32,6 +32,7 @@ class Product(models.Model):
     image_type = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    sales_count = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return self.name
