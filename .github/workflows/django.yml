@@ -21,6 +21,13 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Set up PostgreSQL
+      uses: harmon758/postgresql-action@v1
+      with:
+        postgresql version: '15'
+        postgresql db: store_db
+        postgresql user: postgres
+        postgresql password: postgres
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
