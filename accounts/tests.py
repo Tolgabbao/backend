@@ -14,6 +14,7 @@ class UserLoginTest(TestCase):
             'password': 'testpassword'
         }
     def test_login_successful(self):
+        """Test login with existent user"""
         data = {
             "email": "test@example.com",
             "password": "testpassword"
@@ -32,3 +33,16 @@ class UserLoginTest(TestCase):
         #self.assertEqual(response.json().get("message"), "User authenticated")
         #self.assertIn("message", response.data)
         #self.assertEqual(response.json().get("email"), "test@example.com")
+
+    def test_login_nonexistent_user(self):
+        """Test login with non-existent user"""
+        data = {
+            'email': 'nonexistent@example.com',
+            'password': 'password123'
+        }
+        response = self.client.post(self.login_url, data)
+        self.assertEqual(response.status_code, 400)
+
+        response_data = response.json()
+        self.assertEqual(response_data['message'], 'Invalid credentials')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
