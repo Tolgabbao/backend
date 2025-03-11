@@ -2,12 +2,12 @@ from django.test import TestCase
 from django.urls import reverse
 from .models import User
 
-class UserLoginTest(TestCase):
+class UserAuthenticationTest(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="testuser", email="test@example.com", password="testpassword")
         self.login_url = reverse('login') # otomatik olarak login'in URL path'ini döndürüyor
                                           # bizim url path'ımız "/auth/login/", reverse('login') sayesinde
                                           # bunu otomatik olarak kendisi buluyo
+        self.register_url = reverse('register')
         self.user_data = {
             'username': 'testuser',
             'email': 'test@example.com',
@@ -15,6 +15,11 @@ class UserLoginTest(TestCase):
         }
     def test_login_successful(self):
         """Test login with existent user"""
+        #Creating user
+        user = User.objects.create_user(username=self.user_data['username'],
+                                        email=self.user_data['email'],
+                                        password=self.user_data['password'])
+
         data = {
             "email": "test@example.com",
             "password": "testpassword"
@@ -39,6 +44,12 @@ class UserLoginTest(TestCase):
     def test_login_nonexistent_user(self):
         """Test login with non-existent user"""
         # wrong email #
+
+        #Creating user
+        user = User.objects.create_user(username=self.user_data['username'],
+                                        email=self.user_data['email'],
+                                        password=self.user_data['password'])
+
         data = {
             'email': 'nonexistent@example.com',
             'password': 'testpassword'
@@ -52,6 +63,11 @@ class UserLoginTest(TestCase):
 
     def test_login_wrong_password(self):
         """Test login with wrong password"""
+        #Creating user
+        user = User.objects.create_user(username=self.user_data['username'],
+                                        email=self.user_data['email'],
+                                        password=self.user_data['password'])
+
         invalid_data = {
             'email': 'test@example.com',
             'password': 'wrongpassword'
@@ -65,3 +81,4 @@ class UserLoginTest(TestCase):
                                         # olarak döndürür
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
+
