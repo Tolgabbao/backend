@@ -8,6 +8,7 @@ class UserAuthenticationTest(TestCase):
                                           # bizim url path'ımız "/auth/login/", reverse('login') sayesinde
                                           # bunu otomatik olarak kendisi buluyo
         self.register_url = reverse('register')
+        self.logout_url = reverse('logout')
         self.user_data = {
             'username': 'testuser',
             'email': 'test@example.com',
@@ -112,5 +113,50 @@ class UserAuthenticationTest(TestCase):
         self.assertIn('User already exists', response_data['message']) # response'nin içinde
                                                                                # 'user already exists'
                                                                                # var mı diye kontrol eder
+
+    """Test logout for an authenticated user"""
+    def test_logout_authenticated_user(self):
+        # Create and login a user
+        User.objects.create_user(username=self.user_data['username'],
+                                 email=self.user_data['email'],
+                                 password=self.user_data['password'])
+
+        data = {
+            "email": "test@example.com",
+            "password": "testpassword"
+        }
+
+        self.client.post(self.login_url, data)
+
+        # Logout
+        response = self.client.post(self.logout_url)
+        self.assertEqual(response.status_code, 200)
+
+        response_data = response.json()
+        self.assertEqual(response_data['message'], 'User logged out')
+
+        # User authenticated mı diye kontrol eder.
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    """Test registration with missing required fields"""
+"""""
+    def test_register_missing_fields(self):
+        incomplete_data = {
+            'username': 'testuser',
+            #'email': 'testexample2@gmail.com',
+            'password': 'testpassword'
+            # Missing email
+        }
+
+        response = self.client.post(self.register_url, incomplete_data)
+        #print(response.json())
+        self.assertEqual(response.status_code, 400)
+"""""
+
+# invalid email format unit testing yapmak istedik ama kod yok. @, gmail.com vs yazmadan hesap oluşturunca
+# sıkıntı çıkmıyor
+
+
+
 
 
