@@ -50,4 +50,3 @@ class UserLoginTest(TestCase):
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
 
-
