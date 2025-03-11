@@ -24,7 +24,9 @@ class UserLoginTest(TestCase):
         response = self.client.post(self.login_url, data)
         self.assertEqual(response.status_code, 200)
 
-        response_data = response.json()
+        response_data = response.json() # gelen HTTP yanıtının gövdesindeki veriyi
+                                        # JSON formatında çözümleyerek Python dictionary
+                                        # olarak döndürür
         self.assertEqual(response_data["message"], "User authenticated")
         self.assertEqual(response_data["email"], self.user_data['email'])
         self.assertEqual(response_data["username"], self.user_data['username'])
@@ -36,9 +38,10 @@ class UserLoginTest(TestCase):
 
     def test_login_nonexistent_user(self):
         """Test login with non-existent user"""
+        # wrong email #
         data = {
             'email': 'nonexistent@example.com',
-            'password': 'password123'
+            'password': 'testpassword'
         }
         response = self.client.post(self.login_url, data)
         self.assertEqual(response.status_code, 400)
@@ -46,3 +49,5 @@ class UserLoginTest(TestCase):
         response_data = response.json()
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
+
+
