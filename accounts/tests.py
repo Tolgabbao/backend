@@ -50,3 +50,18 @@ class UserLoginTest(TestCase):
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
 
+    def test_login_wrong_password(self):
+        """Test login with wrong password"""
+        invalid_data = {
+            'email': 'test@example.com',
+            'password': 'wrongpassword'
+        }
+
+        response = self.client.post( self.login_url, invalid_data)
+        self.assertEqual(response.status_code, 400)
+
+        response_data = response.json() # gelen HTTP yanıtının gövdesindeki veriyi
+                                        # JSON formatında çözümleyerek Python dictionary
+                                        # olarak döndürür
+        self.assertEqual(response_data['message'], 'Invalid credentials')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
