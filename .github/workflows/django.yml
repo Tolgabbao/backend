@@ -13,7 +13,32 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12"]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: store_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - uses: actions/checkout@v4
@@ -26,5 +51,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     - name: Run Tests
+      env:
+        POSTGRES_HOST: localhost
+        POSTGRES_PORT: 5432
+        POSTGRES_DB: store_db
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
       run: |
         python manage.py test
