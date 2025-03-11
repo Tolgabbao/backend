@@ -13,8 +13,10 @@ class UserAuthenticationTest(TestCase):
             'email': 'test@example.com',
             'password': 'testpassword'
         }
+
+    """Test login with existent user"""
     def test_login_successful(self):
-        """Test login with existent user"""
+
         #Creating user
         user = User.objects.create_user(username=self.user_data['username'],
                                         email=self.user_data['email'],
@@ -41,8 +43,8 @@ class UserAuthenticationTest(TestCase):
         #self.assertIn("message", response.data)
         #self.assertEqual(response.json().get("email"), "test@example.com")
 
+    """Test login with non-existent user"""
     def test_login_nonexistent_user(self):
-        """Test login with non-existent user"""
         # wrong email #
 
         #Creating user
@@ -61,8 +63,8 @@ class UserAuthenticationTest(TestCase):
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
 
+    """Test login with wrong password"""
     def test_login_wrong_password(self):
-        """Test login with wrong password"""
         #Creating user
         user = User.objects.create_user(username=self.user_data['username'],
                                         email=self.user_data['email'],
@@ -82,3 +84,19 @@ class UserAuthenticationTest(TestCase):
         self.assertEqual(response_data['message'], 'Invalid credentials')
         self.assertFalse(response.wsgi_request.user.is_authenticated)  # user oturum açmamış mı kontrol eder
 
+    """Test successful user registration"""
+    def test_register_success(self):
+
+
+        response = self.client.post(self.register_url, self.user_data) # mock kullanıcı oluşturur, test bitince silinir
+        self.assertEqual(response.status_code, 200)
+
+        response_data = response.json()
+        self.assertEqual(response_data['message'], 'User created')
+
+        # Verify user was created in the database
+        self.assertTrue(User.objects.filter(email=self.user_data['email']).exists())
+
+        # Verify user has correct attributes
+        user = User.objects.get(email=self.user_data['email'])
+        self.assertEqual(user.username, self.user_data['username'])
