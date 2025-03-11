@@ -39,10 +39,6 @@ class UserAuthenticationTest(TestCase):
         self.assertEqual(response_data["username"], self.user_data['username'])
         self.assertTrue(response.wsgi_request.user.is_authenticated)  # user oturum açmış mı kontrol eder
 
-        #self.assertEqual(response.json().get("message"), "User authenticated")
-        #self.assertIn("message", response.data)
-        #self.assertEqual(response.json().get("email"), "test@example.com")
-
     """Test login with non-existent user"""
     def test_login_nonexistent_user(self):
         # wrong email #
@@ -100,3 +96,21 @@ class UserAuthenticationTest(TestCase):
         # Verify user has correct attributes
         user = User.objects.get(email=self.user_data['email'])
         self.assertEqual(user.username, self.user_data['username'])
+
+    """Test registration with duplicate email"""
+    def test_register_duplicate_email(self):
+        # Create a user
+        user = User.objects.create_user(username=self.user_data['username'],
+                                        email=self.user_data['email'],
+                                        password=self.user_data['password'])
+
+        # Try to register another user with the same email
+        response = self.client.post(self.register_url, self.user_data)
+        self.assertEqual(response.status_code, 400)
+
+        response_data = response.json()
+        self.assertIn('User already exists', response_data['message']) # response'nin içinde
+                                                                               # 'user already exists'
+                                                                               # var mı diye kontrol eder
+
+
