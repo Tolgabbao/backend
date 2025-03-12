@@ -8,7 +8,7 @@ This is a Django-based e-commerce backend API that provides functionality for us
 - Django
 - Celery -> not yet implemented
 - PostgreSQL
-- Redis -> not yet implemented
+- Redis
 - Docker
 
 ## Project Structure
@@ -29,8 +29,8 @@ The project consists of three main apps:
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd <project-directory>
+git clone https://github.com/Tolgabbao/backend.git
+cd backend
 ```
 
 2. Build and start the Docker containers, recommended to download the frontend as well before this:
@@ -67,7 +67,7 @@ docker-compose exec backend python manage.py createsuperuser
 - `/api/categories/` - List and create categories
 
 #### Image Storage
-Images are stored in the filesystem under MEDIA_ROOT/product_images/ with the following benefits:
+Images are stored in the filesystem under media/product_images/ with the following benefits:
 - Better performance for image serving
 - Support for multiple images per product
 - Primary image designation for main product display
