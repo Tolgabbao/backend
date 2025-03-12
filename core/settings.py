@@ -13,6 +13,11 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 
+
+from django.conf import settings
+from django.conf.urls.static import static
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -171,8 +176,13 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+urlpatterns = [
+    # Your existing URL patterns
+]
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -217,3 +227,8 @@ CELERY_TIMEZONE = TIME_ZONE
 # Ensure cookies are properly set for cross-domain if needed
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 SESSION_COOKIE_SAMESITE = "Lax"  # Or 'None' with secure=True for cross-site requests
+
+
+# Add this at the end of the file
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

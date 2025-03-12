@@ -1,8 +1,8 @@
-from rest_framework import viewsets, permissions, filters
+from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse
 from django.core.cache import cache
 from django.views.decorators.cache import cache_page
 from django.conf import settings
@@ -11,14 +11,15 @@ import logging
 from django.db.utils import ProgrammingError
 
 from orders.models import Order
-from .models import Product, Category, ProductRating, ProductComment
+from .models import Product, Category, ProductRating, ProductComment, ProductImage
 from .serializers import (
     ProductSerializer,
     CategorySerializer,
     ProductRatingSerializer,
     ProductCommentSerializer,
+    ProductImageSerializer,
 )
-from .tasks import process_product_image, update_product_ratings
+from .tasks import update_product_ratings
 
 logger = logging.getLogger(__name__)
 
@@ -116,13 +117,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        result = super().perform_create(serializer)
+        result = serializer.save()
         safe_cache_delete(PRODUCT_LIST_CACHE_KEY)
-        # Process image if it exists
-        if "image" in self.request.data:
-            process_product_image.delay(
-                serializer.instance.id, serializer.instance.image
-            )
         return result
 
     @action(detail=True, methods=["post"], url_path="add-product")
@@ -147,12 +143,143 @@ class ProductViewSet(viewsets.ModelViewSet):
         safe_cache_delete(f"{PRODUCT_DETAIL_CACHE_KEY_PREFIX}{instance.id}")
         return result
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # Add request to context for building absolute URLs
+        context.update({"request": self.request})
+        return context
+
     @action(detail=True, methods=["get"])
-    def image(self, request, pk=None):
+    def images(self, request, pk=None):
+        """Get all images for a product"""
         product = self.get_object()
-        if product.image_data:
-            return HttpResponse(product.image_data, content_type=product.image_type)
-        return HttpResponse(status=404)
+        images = ProductImage.objects.filter(product=product)
+        serializer = ProductImageSerializer(
+            images,
+            many=True,
+            context={"request": request},  # Pass request in context
+        )
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def add_image(self, request, pk=None):
+        """Add a new image to a product"""
+        product = self.get_object()
+
+        # Only staff can add images
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff can add images"}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Handle both multipart form and base64 encoded image
+        image_file = request.data.get("image")
+        is_primary = request.data.get("is_primary", False)
+        alt_text = request.data.get("alt_text", "")
+
+        if not image_file:
+            return Response(
+                {"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create ProductImage
+        product_image = ProductImage(
+            product=product,
+            is_primary=is_primary == "true" or is_primary is True,
+            alt_text=alt_text,
+        )
+
+        # Handle base64 encoded image
+        if isinstance(image_file, str) and "base64" in image_file:
+            from django.core.files.base import ContentFile
+            import base64
+
+            format, imgstr = image_file.split(";base64,")
+            ext = format.split("/")[-1]
+            file_content = ContentFile(
+                base64.b64decode(imgstr),
+                name=f"product_{product.id}_{product_image.id}.{ext}",
+            )
+            product_image.image = file_content
+        else:
+            # Handle regular file upload
+            product_image.image = image_file
+
+        product_image.save()
+
+        # Clear cache for this product
+        safe_cache_delete(f"{PRODUCT_DETAIL_CACHE_KEY_PREFIX}{product.id}")
+
+        return Response(
+            ProductImageSerializer(product_image).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["delete"])
+    def remove_image(self, request, pk=None):
+        """Remove an image from a product"""
+        product = self.get_object()
+
+        # Only staff can remove images
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff can remove images"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        image_id = request.query_params.get("image_id")
+        if not image_id:
+            return Response(
+                {"error": "No image ID provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            image = ProductImage.objects.get(id=image_id, product=product)
+            image.delete()
+
+            # Clear cache for this product
+            safe_cache_delete(f"{PRODUCT_DETAIL_CACHE_KEY_PREFIX}{product.id}")
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProductImage.DoesNotExist:
+            return Response(
+                {"error": "Image not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=["post"])
+    def set_primary_image(self, request, pk=None):
+        """Set an image as primary for a product"""
+        product = self.get_object()
+
+        # Only staff can set primary image
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff can set primary image"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        image_id = request.data.get("image_id")
+        if not image_id:
+            return Response(
+                {"error": "No image ID provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Set all product images to non-primary first
+            ProductImage.objects.filter(product=product).update(is_primary=False)
+
+            # Set the specified image to primary
+            image = ProductImage.objects.get(id=image_id, product=product)
+            image.is_primary = True
+            image.save()
+
+            # Clear cache for this product
+            safe_cache_delete(f"{PRODUCT_DETAIL_CACHE_KEY_PREFIX}{product.id}")
+
+            return Response(ProductImageSerializer(image).data)
+        except ProductImage.DoesNotExist:
+            return Response(
+                {"error": "Image not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
     @action(detail=True, methods=["post"])
     def rate_product(self, request, pk=None):
@@ -268,6 +395,26 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(
             {"id": product.id, "name": product.name, "is_visible": product.is_visible}
         )
+
+    @action(detail=True, methods=["get"])
+    def image(self, request, pk=None):
+        """Endpoint to get the primary/first image for backward compatibility"""
+        product = self.get_object()
+
+        # Try to get primary image first
+        primary_image = ProductImage.objects.filter(
+            product=product, is_primary=True
+        ).first()
+
+        # If no primary image, get first image
+        if not primary_image:
+            primary_image = ProductImage.objects.filter(product=product).first()
+
+        if primary_image and primary_image.image:
+            return FileResponse(primary_image.image.open())
+
+        # If no image found, return 404
+        return HttpResponse(status=404)
 
 
 @cache_page(settings.CACHE_TTL)

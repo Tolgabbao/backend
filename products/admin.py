@@ -1,20 +1,27 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Product, Category, ProductRating, ProductComment
-import base64
+from .models import Product, Category, ProductRating, ProductComment, ProductImage
 from django import forms
 
 
-class ProductAdminForm(forms.ModelForm):
-    image_upload = forms.ImageField(required=False)
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1  # Number of empty forms to display
+    fields = ("image", "alt_text", "is_primary", "image_preview")
+    readonly_fields = ("image_preview",)
 
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" width="100" height="auto" />', obj.image.url
+            )
+        return "No image"
+
+
+class ProductAdminForm(forms.ModelForm):
     class Meta:
         model = Product
-        exclude = (
-            "image_data",
-            "image_type",
-            "image_name",
-        )  # Exclude binary fields from direct editing
+        fields = "__all__"
 
 
 @admin.register(Product)
@@ -30,37 +37,25 @@ class ProductAdmin(admin.ModelAdmin):
     ]
     list_filter = ["category", "is_visible"]
     search_fields = ["name", "model", "serial_number"]
-    readonly_fields = ["image_preview"]
+    inlines = [ProductImageInline]
 
     @admin.display(description="Image")
     def thumbnail(self, obj):
-        if obj.image_data:
-            image_base64 = base64.b64encode(obj.image_data).decode("utf-8")
+        primary_image = obj.images.filter(is_primary=True).first()
+
+        if primary_image and primary_image.image:
             return format_html(
-                '<img src="data:{};base64,{}" width="50" height="50" />',
-                obj.image_type or "image/jpeg",
-                image_base64,
+                '<img src="{}" width="50" height="50" />', primary_image.image.url
             )
+
+        # Fall back to first image
+        first_image = obj.images.first()
+        if first_image and first_image.image:
+            return format_html(
+                '<img src="{}" width="50" height="50" />', first_image.image.url
+            )
+
         return "No image"
-
-    @admin.display(description="Image Preview")
-    def image_preview(self, obj):
-        if obj.image_data:
-            image_base64 = base64.b64encode(obj.image_data).decode("utf-8")
-            return format_html(
-                '<img src="data:{};base64,{}" width="300" />',
-                obj.image_type or "image/jpeg",
-                image_base64,
-            )
-        return "No image uploaded"
-
-    def save_model(self, request, obj, form, change):
-        if form.cleaned_data.get("image_upload"):
-            image_file = form.cleaned_data["image_upload"]
-            obj.image_data = image_file.read()
-            obj.image_type = image_file.content_type
-            obj.image_name = image_file.name
-        super().save_model(request, obj, form, change)
 
     fieldsets = (
         (
@@ -71,17 +66,23 @@ class ProductAdmin(admin.ModelAdmin):
             "Pricing and Stock",
             {"fields": ("price", "cost_price", "stock_quantity", "warranty_months")},
         ),
-        (
-            "Image",
-            {
-                "fields": (
-                    "image_upload",
-                    "image_preview",
-                )  # Changed from image_data to image_upload
-            },
-        ),
         ("Additional Information", {"fields": ("distributor_info", "is_visible")}),
     )
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ["id", "product", "is_primary", "image_thumbnail", "upload_date"]
+    list_filter = ["is_primary", "upload_date"]
+    search_fields = ["product__name", "alt_text"]
+
+    @admin.display(description="Thumbnail")
+    def image_thumbnail(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" width="50" height="auto" />', obj.image.url
+            )
+        return "No image"
 
 
 @admin.register(Category)

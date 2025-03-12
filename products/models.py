@@ -27,9 +27,6 @@ class Product(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     distributor_info = models.TextField()
     is_visible = models.BooleanField(default=False)
-    image_data = models.BinaryField(null=True, blank=True)
-    image_name = models.CharField(max_length=255, null=True, blank=True)
-    image_type = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     sales_count = models.PositiveIntegerField(default=0)
@@ -40,6 +37,43 @@ class Product(models.Model):
     @property
     def average_rating(self):
         return self.ratings.aggregate(Avg("rating"))["rating__avg"]
+
+    @property
+    def main_image(self):
+        """Return the main image (primary ProductImage or first one)"""
+        primary_image = self.images.filter(is_primary=True).first()
+        if primary_image:
+            return primary_image.image.url if primary_image.image else None
+
+        first_image = self.images.first()
+        if first_image:
+            return first_image.image.url if first_image.image else None
+
+        return None
+
+
+class ProductImage(models.Model):
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="images"
+    )
+    image = models.ImageField(upload_to="product_images/")
+    alt_text = models.CharField(max_length=255, blank=True)
+    is_primary = models.BooleanField(default=False)
+    upload_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_primary", "upload_date"]
+
+    def __str__(self):
+        return f"Image for {self.product.name} ({'primary' if self.is_primary else 'secondary'})"
+
+    def save(self, *args, **kwargs):
+        # Ensure only one primary image per product
+        if self.is_primary:
+            ProductImage.objects.filter(product=self.product, is_primary=True).update(
+                is_primary=False
+            )
+        super().save(*args, **kwargs)
 
 
 class ProductRating(models.Model):

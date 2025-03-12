@@ -60,13 +60,18 @@ docker-compose exec backend python manage.py createsuperuser
 ### Products
 - `/api/products/` - List and create products
 - `/api/products/<id>/` - Retrieve, update, and delete products
+- `/api/products/<id>/images/` - List all images for a product
+- `/api/products/<id>/add_image/` - Add a new image to a product (staff only)
+- `/api/products/<id>/remove_image/?image_id=<image_id>` - Remove an image (staff only)
+- `/api/products/<id>/set_primary_image/` - Set an image as primary (staff only)
 - `/api/categories/` - List and create categories
 
 #### Image Storage
-Images are stored directly in PostgreSQL using BinaryField, which allows for:
-- Direct database backup including all images
-- No need for separate file storage system
-- Consistent data handling across different environments
+Images are stored in the filesystem under MEDIA_ROOT/product_images/ with the following benefits:
+- Better performance for image serving
+- Support for multiple images per product
+- Primary image designation for main product display
+- Separation of image data from product metadata
 
 ### Orders
 - `/api/cart/` - Shopping cart operations
