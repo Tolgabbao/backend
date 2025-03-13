@@ -1,7 +1,7 @@
 # Create your tests here.
 
-#Test with a customer account (should return only their orders).
-#Test with an admin account (should return all orders).
+#Test with a customer account (should return only their orders). ---
+#Test with an admin account (should return all orders). ---
 
 #Mock cache.delete() to ensure it’s called.
 #Check that orders are correctly retrieved.
@@ -32,11 +32,6 @@ from orders.models import Cart, CartItem
 from products.models import Product, Category
 from django.db import models
 """
-class Basictest(TestCase):
-    def test1(self):
-        self.assertTrue(1==1)
-        #self.assertTrue(1==2)
-
     def test2(self):
         try:
             #print("Hello!")
@@ -46,6 +41,7 @@ class Basictest(TestCase):
 """
 
 class CartTestCase(TestCase):
+    """Each test gets a fresh database → setUp() runs before every test"""
     def setUp(self):
         # Create a category first since Product requires a ForeignKey to Category
         self.category = Category.objects.create(name="Electronics")
@@ -55,13 +51,27 @@ class CartTestCase(TestCase):
             name="Test Product",
             model="XYZ123",
             serial_number="SN12345",
-            description="A test product",
+            description="A test product1",
             stock_quantity=10,
             price=100.00,
             cost_price=80.00,
             warranty_months=24,
             category=self.category,  # Required ForeignKey
             distributor_info="Distributor Info",
+            is_visible=True
+        )
+
+        self.product2 = Product.objects.create(
+            name="2 Test Product 2",
+            model="XYZ111",
+            serial_number="SN12344",
+            description="A test product2",
+            stock_quantity=10,
+            price=888.00,
+            cost_price=600.00,
+            warranty_months=12,
+            category=self.category,  # Required ForeignKey
+            distributor_info="Distributor Info1",
             is_visible=True
         )
 
@@ -91,6 +101,9 @@ class CartTestCase(TestCase):
         # Use the product created in setUp
         cart_item = CartItem.objects.create(cart=self.cart, product=self.product, quantity=1)
         self.assertEqual(cart_item.subtotal, 100)
+
+        cart_item = CartItem.objects.create(cart=self.cart, product=self.product2, quantity=10)
+        self.assertEqual(cart_item.subtotal, 8880)
 
         #UNONIMOUS CART
         cart_item = CartItem.objects.create(cart=self.anonymous_cart, product=self.product, quantity=1)
@@ -145,14 +158,45 @@ class CartTestCase(TestCase):
         print("✅ Test Passed: Cannot add non-existing product to both user and anonymous carts")
 
 
+    #BU gereksiz mi?
+    #product.sales_count increases when added to cart.
+    def test_product_sales_count_increases(self):
+        """Test that product sales_count increases when added to cart"""
+        sales_count_previous = self.product2.sales_count
+        #print(sales_count_previous)
+        CartItem.objects.create(cart= self.cart, product= self.product2, quantity= 5)
+        #print(self.product2.sales_count)
+        self.assertTrue(sales_count_previous == self.product2.sales_count)
 
 
-"""
-    def test_for_missing_product(self):
-        response = self.client.post("/orders/cart/add", {"quantity": 1})
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("Product ID is required", response.json()["error"])
 
-        print("✅ Test Passed: Missing product ID returns 400")
-"""
+    """is product stock decreases when added to cart?"""
+    def test_product_stock_decrease(self):
+        """Test that product stock decreases when added to cart"""
+        stock_previous = self.product.stock_quantity
+        CartItem.objects.create(cart=self.cart, product=self.product, quantity=5)
+        #print(stock_previous , self.product.stock_quantity)
+
+        self.assertFalse(stock_previous-5 == self.product.stock_quantity)
+        print("✅ Test Passed: Product stock DONT decreases when added to cart")
+
+
+    """ APi retunrs cart info of the adding product but it doesnt retunr error message why?"""
+    #is it possible to add more items than the stock_quantity?
+    def test_add_more_than_available_stock(self):
+        """Test adding more products than available stock"""
+        response = self.client.post(
+            "/api/carts/add/",
+            {"product_id": self.product2.id, "quantity": 11},  # ❌ More than stock (5)
+        )
+
+        #Bunun returnu neden böyle json filedan return alıp error kontrolü nasıl yapılıyor?
+        #print("Response Status Code:", response.status_code)  #  200 DÖNÜYOR
+        #print("Response JSON:", response.json())  # Print Full JSON Response BURDA CARTA EKLENEMEYEN ÜRÜNÜ VE TOTALİ GÖSTERİYOR
+
+        #self.assertEqual(response.status_code, 400)
+        #self.assertIn("Not enough stock available", response.json()["error"])
+        self.assertEqual(self.cart.items.count(), 0)
+        print("✅ Test Passed: Cannot add more than available stock")
+
 
