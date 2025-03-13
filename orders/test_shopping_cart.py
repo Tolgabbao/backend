@@ -167,9 +167,10 @@ class CartTestCase(TestCase):
         CartItem.objects.create(cart= self.cart, product= self.product2, quantity= 5)
         #print(self.product2.sales_count)
         self.assertTrue(sales_count_previous == self.product2.sales_count)
+
+
+
     """is product stock decreases when added to cart?"""
-
-
     def test_product_stock_decrease(self):
         """Test that product stock decreases when added to cart"""
         stock_previous = self.product.stock_quantity
