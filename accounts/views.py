@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.core.cache import cache
 from .models import User
+from .models import Address
 
 # Cache key patterns
 USER_CACHE_KEY_PREFIX = "user_profile_"
@@ -25,6 +26,8 @@ def log_in(request):
                 "email": user.email,
                 "date_joined": user.date_joined,
                 "is_staff": user.is_admin,
+                "addresses": user.get_addresses(),
+                "main_address": user.get_main_address_dict()
             },
             timeout=None,
         )  # No timeout - cleared on logout
@@ -35,6 +38,8 @@ def log_in(request):
                 "email": user.email,
                 "id": user.id,
                 "is_staff": user.is_admin,
+                "addresses": user.get_addresses(),
+                "main_address": user.get_main_address_dict()
             }
         )
     else:
@@ -66,6 +71,8 @@ def get_user(request):
             "email": request.user.email,
             "date_joined": request.user.date_joined,
             "is_staff": request.user.is_admin(),
+            "addresses": request.user.get_addresses(),
+            "main_address": request.user.get_main_address_dict()
         }
 
         cache.set(f"{USER_CACHE_KEY_PREFIX}{request.user.id}", user_data, timeout=None)
@@ -90,3 +97,132 @@ def register(request):
         return Response({"message": "Invalid data"}, status=400)
     except Exception:
         return Response({"message": f"User already exists, {Exception}"}, status=400)
+
+
+@api_view(['GET', 'POST'])
+def address_list(request):
+    """List all addresses or create a new address for the authenticated user"""
+    if not request.user.is_authenticated:
+        return Response({"message": "User not authenticated"}, status=400)
+
+    if request.method == 'GET':
+        addresses = request.user.get_addresses()
+        return Response(addresses)
+
+    elif request.method == 'POST':
+        try:
+            # Create a new address
+            address = Address(
+                user=request.user,
+                name=request.data.get('name', ''),
+                street_address=request.data.get('street_address', ''),
+                city=request.data.get('city', ''),
+                state=request.data.get('state', ''),
+                postal_code=request.data.get('postal_code', ''),
+                country=request.data.get('country', ''),
+                is_main=request.data.get('is_main', False)
+            )
+            address.save()
+
+            # Clear user cache to reflect the address changes
+            cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
+
+            return Response({
+                "id": address.id,
+                "name": address.name,
+                "street_address": address.street_address,
+                "city": address.city,
+                "state": address.state,
+                "postal_code": address.postal_code,
+                "country": address.country,
+                "is_main": address.is_main
+            }, status=201)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def address_detail(request, pk):
+    """Retrieve, update or delete an address"""
+    if not request.user.is_authenticated:
+        return Response({"message": "User not authenticated"}, status=400)
+
+    try:
+        address = Address.objects.get(pk=pk, user=request.user)
+    except Address.DoesNotExist:
+        return Response(status=404)
+
+    if request.method == 'GET':
+        return Response({
+            "id": address.id,
+            "name": address.name,
+            "street_address": address.street_address,
+            "city": address.city,
+            "state": address.state,
+            "postal_code": address.postal_code,
+            "country": address.country,
+            "is_main": address.is_main
+        })
+
+    elif request.method == 'PUT':
+        try:
+            # Update address fields
+            address.name = request.data.get('name', address.name)
+            address.street_address = request.data.get('street_address', address.street_address)
+            address.city = request.data.get('city', address.city)
+            address.state = request.data.get('state', address.state)
+            address.postal_code = request.data.get('postal_code', address.postal_code)
+            address.country = request.data.get('country', address.country)
+            address.is_main = request.data.get('is_main', address.is_main)
+            address.save()
+
+            # Clear user cache to reflect the address changes
+            cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
+
+            return Response({
+                "id": address.id,
+                "name": address.name,
+                "street_address": address.street_address,
+                "city": address.city,
+                "state": address.state,
+                "postal_code": address.postal_code,
+                "country": address.country,
+                "is_main": address.is_main
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+    elif request.method == 'DELETE':
+        # If this is the main address, try to set another address as main
+        if address.is_main:
+            next_address = Address.objects.filter(user=request.user).exclude(pk=pk).first()
+            if next_address:
+                next_address.is_main = True
+                next_address.save()
+
+        address.delete()
+
+        # Clear user cache to reflect the address changes
+        cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
+
+        return Response(status=204)
+
+
+@api_view(['PUT'])
+def set_main_address(request, pk):
+    """Set an address as the main address"""
+    if not request.user.is_authenticated:
+        return Response({"message": "User not authenticated"}, status=400)
+
+    try:
+        address = Address.objects.get(pk=pk, user=request.user)
+    except Address.DoesNotExist:
+        return Response(status=404)
+
+    address.is_main = True
+    address.save()
+
+    # Clear user cache to reflect the address changes
+    cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
+
+    return Response({"message": "Address set as main"})
