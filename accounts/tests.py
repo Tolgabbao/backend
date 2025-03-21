@@ -1,6 +1,7 @@
-from django.test import TestCase
+from django.test import TestCase, Client
 from django.urls import reverse
 from .models import User
+from .models import Address
 
 class UserAuthenticationTest(TestCase):
     def setUp(self):
@@ -201,6 +202,70 @@ class UserAuthenticationTest(TestCase):
 # invalid email format unit testing yapmak istedik ama kod yok. @, gmail.com vs yazmadan hesap oluşturunca
 # sıkıntı çıkmıyor
 
+class AddressAPITest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username="testuser", email="email@example.com", password="password")
+
+        # Force authentication for API testing
+        self.client.force_login(self.user)
+
+    def test_create_address(self):
+        data = {
+            "name": "Home",
+            "street_address": "123 Test St",
+            "city": "Testville",
+            "state": "TS",
+            "postal_code": "12345",
+            "country": "Testland",
+            "is_main": True
+        }
+        response = self.client.post("/addresses/", data, content_type="application/json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Address.objects.count(), 1)
+
+    def test_get_addresses(self):
+        Address.objects.create(user=self.user, name="Home", street_address="123 Test St", city="Testville", state="TS", postal_code="12345", country="Testland", is_main=True)
+
+        response = self.client.get("/addresses/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
+    def test_set_main_address(self):
+        addr1 = Address.objects.create(user=self.user, name="Home", is_main=True)
+        addr2 = Address.objects.create(user=self.user, name="Work", is_main=False)
+
+        response = self.client.put(f"/addresses/{addr2.id}/set-main/", content_type="application/json")
+
+        addr1.refresh_from_db()
+        addr2.refresh_from_db()
+
+        self.assertFalse(addr1.is_main)
+        self.assertTrue(addr2.is_main)
+
+    def test_delete_address(self):
+        addr = Address.objects.create(user=self.user, name="Home")
+
+        response = self.client.delete(f"/addresses/{addr.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(Address.objects.count(), 0)
+
+    def test_get_multiple_addresses(self):
+        # Create multiple addresses for the user
+        Address.objects.create(user=self.user, name="Home", street_address="123 Test St", city="Testville", state="TS",
+                               postal_code="12345", country="Testland", is_main=True)
+        Address.objects.create(user=self.user, name="Work", street_address="456 Work St", city="Worktown", state="WT",
+                               postal_code="67890", country="Testland", is_main=False)
+
+        # Make GET request to retrieve all addresses
+        response = self.client.get("/addresses/")
+
+        # Assertions
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)  # Ensure two addresses are returned
 
 
 
