@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from products.views import ProductViewSet, CategoryViewSet, get_categories
 from orders.views import OrderViewSet, CartViewSet
-from accounts.views import log_in, log_out, get_user, register
+from accounts.views import log_in, log_out, get_user, register, address_list, address_detail, set_main_address
 
 # Create a router and register our viewsets with it
 router = DefaultRouter()
@@ -48,4 +48,8 @@ urlpatterns = [
         ProductViewSet.create_product_api,
         name="add_product",
     ),
+    path('addresses/', address_list, name='address_list'),
+    path('addresses/<int:pk>/', address_detail, name='address_detail'),
+    path('addresses/<int:pk>/set-main/', set_main_address, name='set_main_address'),
+
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
