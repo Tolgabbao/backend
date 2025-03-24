@@ -111,6 +111,11 @@ def address_list(request):
 
     elif request.method == 'POST':
         try:
+            if request.data.get('is_main', False):
+                # Unset previous main address
+                Address.objects.filter(user=request.user, is_main=True).update(is_main=False)
+
+
             # Create a new address
             address = Address(
                 user=request.user,
@@ -195,7 +200,7 @@ def address_detail(request, pk):
     elif request.method == 'DELETE':
         # If this is the main address, try to set another address as main
         if address.is_main:
-            next_address = Address.objects.filter(user=request.user).exclude(pk=pk).first()
+            next_address = Address.objects.filter(user=request.user).exclude(pk=pk).order_by("id").first()
             if next_address:
                 next_address.is_main = True
                 next_address.save()
@@ -216,13 +221,16 @@ def set_main_address(request, pk):
 
     try:
         address = Address.objects.get(pk=pk, user=request.user)
+
+        # Unset all other main addresses
+        Address.objects.filter(user=request.user, is_main=True).update(is_main=False)
+
+        # Set new main address
+        address.is_main = True
+        address.save()
+
+        cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
+
+        return Response({"message": "Address set as main"})
     except Address.DoesNotExist:
         return Response(status=404)
-
-    address.is_main = True
-    address.save()
-
-    # Clear user cache to reflect the address changes
-    cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
-
-    return Response({"message": "Address set as main"})
