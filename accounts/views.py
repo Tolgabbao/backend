@@ -88,6 +88,8 @@ def register(request):
     password = request.data.get("password")
     email = request.data.get("email")
     try:
+        if not username or not password or not email:
+            raise ValueError("Invalid data")
         user = User.objects.create_user(
             username=username, password=password, email=email, user_type="CUSTOMER"
         )

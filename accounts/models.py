@@ -8,7 +8,7 @@ class User(AbstractUser):
         ("SALES_MANAGER", "Sales Manager"),
         ("PRODUCT_MANAGER", "Product Manager"),
     )
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, blank=False)
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES)
