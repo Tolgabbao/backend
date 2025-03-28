@@ -6,14 +6,13 @@ from django.core.cache import cache
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from .models import Order, Cart, CartItem
+from .models import Order, OrderItem, Cart, CartItem
 from products.models import Product
 from .serializers import OrderSerializer, CartSerializer
 from .tasks import process_order, send_order_status_update
 
 # Cache key patterns
-ORDER_LIST_CACHE_KEY_PREFIX = "user_orders_"
-ORDER_DETAIL_CACHE_KEY_PREFIX = "order_detail_"
+# Remove ORDER_LIST_CACHE_KEY_PREFIX and ORDER_DETAIL_CACHE_KEY_PREFIX
 CART_CACHE_KEY_PREFIX = "cart_"
 
 
@@ -27,30 +26,64 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Order.objects.filter(user=user)
         return Order.objects.all()
 
-    @method_decorator(cache_page(settings.CACHE_TTL))
+    # Remove cache decorator
     def list(self, request, *args, **kwargs):
-        # Clear any existing cache for this user's orders
-        cache.delete(f"{ORDER_LIST_CACHE_KEY_PREFIX}{request.user.id}")
+        # Remove cache clearing code
         return super().list(request, *args, **kwargs)
 
-    @method_decorator(cache_page(settings.CACHE_TTL))
+    # Remove cache decorator
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        
+        # Create the order first
         order = serializer.save(user=request.user)
-
-        # Clear order list cache for this user
-        cache.delete(f"{ORDER_LIST_CACHE_KEY_PREFIX}{request.user.id}")
-
+        
+        # Get the items from the request data
+        items_data = request.data.get('items', [])
+        
+        # Manually create order items
+        for item_data in items_data:
+            product_id = item_data.get('product')
+            quantity = item_data.get('quantity', 1)
+            
+            try:
+                product = Product.objects.get(id=product_id)
+                # Get the current price of the product
+                price_at_time = product.price
+                
+                # Create the order item
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    price_at_time=price_at_time
+                )
+                
+                # Optionally reduce stock quantity
+                # product.stock_quantity -= quantity
+                # product.save()
+                
+            except Product.DoesNotExist:
+                # Log error but continue processing other items
+                print(f"Product with ID {product_id} not found")
+        
+        # Remove order list cache clearing
+        
         # Clear cart cache since it will be emptied
-        cache.delete(f"{CART_CACHE_KEY_PREFIX}user_{request.user.id}")
-
+        if request.user.is_authenticated:
+            cache.delete(f"{CART_CACHE_KEY_PREFIX}user_{request.user.id}")
+        
+        # Refresh the order to include created items in the response
+        order.refresh_from_db()
+        serializer = self.get_serializer(order)
+        
         # Process order asynchronously with Celery
         process_order.delay(order.id)
-
+        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -64,9 +97,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.status = new_status
         order.save()
 
-        # Clear order cache
-        cache.delete(f"{ORDER_DETAIL_CACHE_KEY_PREFIX}{order.id}")
-        cache.delete(f"{ORDER_LIST_CACHE_KEY_PREFIX}{request.user.id}")
+        # Remove order cache clearing
 
         # Send status update asynchronously with Celery
         send_order_status_update.delay(order.id, new_status)
@@ -231,3 +262,31 @@ class CartViewSet(viewsets.ModelViewSet):
             return Response({"error": "Product not found"}, status=404)
         except Cart.DoesNotExist:
             return Response({"error": "Cart not found"}, status=404)
+
+    @action(detail=False, methods=["post"], url_path="clear")
+    def clear_cart(self, request):
+        """Clear all items from the cart"""
+        try:
+            # Get cart based on user or session
+            if request.user.is_authenticated:
+                cart, _ = Cart.objects.get_or_create(user=request.user)
+                cache_key = f"{CART_CACHE_KEY_PREFIX}user_{request.user.id}"
+            else:
+                session_id = getattr(request, "cart_session_id", None)
+                if not session_id:
+                    return Response({"error": "No session ID available"}, status=400)
+                cart, _ = Cart.objects.get_or_create(session_id=session_id)
+                cache_key = f"{CART_CACHE_KEY_PREFIX}session_{session_id}"
+
+            # Delete all items in the cart
+            cart.items.all().delete()
+            
+            # Clear cache for this cart
+            cache.delete(cache_key)
+            
+            # Return empty cart
+            serializer = CartSerializer(cart)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
