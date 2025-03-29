@@ -173,6 +173,11 @@ def address_detail(request, pk):
 
     elif request.method == 'PUT':
         try:
+
+            # Check if this is the main address being unchecked
+            was_main = address.is_main
+            new_is_main = request.data.get('is_main', address.is_main)
+
             # Update address fields
             address.name = request.data.get('name', address.name)
             address.street_address = request.data.get('street_address', address.street_address)
@@ -180,8 +185,15 @@ def address_detail(request, pk):
             address.state = request.data.get('state', address.state)
             address.postal_code = request.data.get('postal_code', address.postal_code)
             address.country = request.data.get('country', address.country)
-            address.is_main = request.data.get('is_main', address.is_main)
+            address.is_main = new_is_main
             address.save()
+
+            # If this was the main address and is no longer, ensure another address is set as main
+            if was_main and not new_is_main:
+                next_address = Address.objects.filter(user=request.user).exclude(pk=pk).order_by("id").first()
+                if next_address:
+                    next_address.is_main = True
+                    next_address.save()
 
             # Clear user cache to reflect the address changes
             cache.delete(f"{USER_CACHE_KEY_PREFIX}{request.user.id}")
