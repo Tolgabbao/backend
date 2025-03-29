@@ -98,7 +98,20 @@ class Address(models.Model):
         # If this address is being set as main, unset is_main for all other addresses of this user
         if self.is_main:
             Address.objects.filter(user=self.user, is_main=True).update(is_main=False)
-        # If this is the first address for the user, make it the main address
-        elif not self.pk and not Address.objects.filter(user=self.user).exists():
-            self.is_main = True
+
+        # Save the address first
         super().save(*args, **kwargs)
+
+        # If there are no main addresses after this save, set this or another address as main
+        if not Address.objects.filter(user=self.user, is_main=True).exists() and Address.objects.filter(
+            user=self.user).exists():
+            # If this is the only address, make it the main address
+            if Address.objects.filter(user=self.user).count() == 1:
+                self.is_main = True
+                super().save(update_fields=['is_main'])
+            else:
+                # Otherwise, set the first address (other than this one) as main
+                other_address = Address.objects.filter(user=self.user).exclude(pk=self.pk).first()
+                if other_address:
+                    other_address.is_main = True
+                    other_address.save(update_fields=['is_main'])
