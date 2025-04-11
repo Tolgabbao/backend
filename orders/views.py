@@ -63,10 +63,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                     price_at_time=price_at_time
                 )
                 
-                # Optionally reduce stock quantity
-                product.stock_quantity -= quantity
-                product.save()
-                
             except Product.DoesNotExist:
                 # Log error but continue processing other items
                 print(f"Product with ID {product_id} not found")
