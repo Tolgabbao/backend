@@ -228,6 +228,20 @@ CELERY_TIMEZONE = TIME_ZONE
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 SESSION_COOKIE_SAMESITE = "Lax"  # Or 'None' with secure=True for cross-site requests
 
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # For Gmail - adjust for other providers
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'xxxx@gmail.com'  # Replace with your actual email
+EMAIL_HOST_PASSWORD = 'xxxxx'  # For Gmail, use an App Password
+DEFAULT_FROM_EMAIL = 'CS308 E-Commerce <xxxxx>'
+
+# For Gmail, you must generate an App Password:
+# 1. Enable 2-Step Verification on your Google account
+# 2. Go to https://myaccount.google.com/apppasswords
+# 3. Generate a new App Password for "Mail" and "Other (Custom name)"
+# 4. Use that 16-character password here
 
 # Add this at the end of the file
 if settings.DEBUG:

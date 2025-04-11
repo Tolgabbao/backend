@@ -21,6 +21,10 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     shipping_address = models.TextField()
+    # Add payment information fields
+    card_last_four = models.CharField(max_length=4)
+    card_holder = models.CharField(max_length=100)
+    expiry_date = models.CharField(max_length=5)  # MM/YY format
 
 
 class OrderItem(models.Model):

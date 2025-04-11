@@ -6,6 +6,8 @@ from django.core.cache import cache
 from .models import User
 from .models import Address
 
+from .tasks import send_welcome_email
+
 # Cache key patterns
 USER_CACHE_KEY_PREFIX = "user_profile_"
 
@@ -94,11 +96,15 @@ def register(request):
             username=username, password=password, email=email, user_type="CUSTOMER"
         )
         if user:
-            # send_welcome_email.delay(user.id, username, email)
+            # Ensure the task is called correctly with proper arguments
+            # Use .delay() to run it asynchronously with Celery
+            send_welcome_email.delay(username, email)
             return Response({"message": "User created"})
         return Response({"message": "Invalid data"}, status=400)
-    except Exception:
-        return Response({"message": f"User already exists, {Exception}"}, status=400)
+    except Exception as e:
+        # Log the actual exception
+        print(f"Error creating user: {str(e)}")
+        return Response({"message": f"User already exists or error occurred: {str(e)}"}, status=400)
 
 
 @api_view(['GET', 'POST'])
