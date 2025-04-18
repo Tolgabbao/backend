@@ -35,14 +35,14 @@ def process_order(order_id):
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-    
+
     # Add header
     p.setFont("Helvetica-Bold", 16)
     p.drawString(50, height - 50, f"Order #{order.id} - Confirmation")
     p.setFont("Helvetica", 12)
     p.drawString(50, height - 70, f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}")
     p.drawString(50, height - 90, f"Customer: {order.user.username}")
-    
+
     # Add shipping address
     p.setFont("Helvetica-Bold", 14)
     p.drawString(50, height - 120, "Shipping Address:")
@@ -51,11 +51,11 @@ def process_order(order_id):
     for line in order.shipping_address.split('\n'):
         p.drawString(50, y_position, line)
         y_position -= 20
-    
+
     # Add order items in a table
     p.setFont("Helvetica-Bold", 14)
     p.drawString(50, y_position - 20, "Order Items:")
-    
+
     # Create table data
     data = [["Product", "Quantity", "Unit Price", "Subtotal"]]
     for item in order.items.all():
@@ -64,10 +64,10 @@ def process_order(order_id):
         price = float(item.price_at_time)
         subtotal = price * quantity
         data.append([product_name, str(quantity), f"${price:.2f}", f"${subtotal:.2f}"])
-    
+
     # Add totals - Fix the format specifier by removing the extra colon
     data.append(["", "", "Total:", f"${float(order.total_amount):.2f}"])
-    
+
     # Create table
     table = Table(data, colWidths=[200, 80, 100, 100])
     table.setStyle(TableStyle([
@@ -80,31 +80,47 @@ def process_order(order_id):
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -2), 1, colors.black),
     ]))
-    
+
     table.wrapOn(p, width - 100, height)
     table.drawOn(p, 50, y_position - 80 - (len(data) * 20))
-    
+
     # Add footer - use standard Helvetica instead of Helvetica-Italic
     p.setFont("Helvetica", 10)  # Changed from Helvetica-Italic to Helvetica
     p.drawString(50, 50, "Thank you for your order! If you have any questions, please contact our customer service.")
-    
+
     p.showPage()
     p.save()
-    
+
     # Move to the beginning of the buffer
     buffer.seek(0)
-    
+
+    additional_info = f"""
+    Payment Information:
+    - Card Last Four: {order.card_last_four}
+    - Card Holder: {order.card_holder}
+    - Payment Info: {order.payment_info}
+    - Last Updated: {order.updated_at.strftime('%Y-%m-%d %H:%M')}
+    """
+
     # Create email with attachment
     email = EmailMessage(
         subject=f"Order #{order_id} Confirmation",
-        body=f"Your order #{order_id} has been received and is being processed. Please find attached the details of your order.",
+        body=f"""
+        Your order #{order_id} has been received and is being processed.
+
+        {additional_info}
+
+        Please find attached the details of your order.
+        If you have any questions, feel free to reach out to us.
+        Thank you for shopping with us!
+        """,
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[order.user.email],
     )
-    
+
     # Attach PDF to email
     email.attach(f'order_{order_id}_confirmation.pdf', buffer.getvalue(), 'application/pdf')
-    
+
     # Send email
     email.send(fail_silently=False)
 
