@@ -20,7 +20,7 @@ class Product(models.Model):
     model = models.CharField(max_length=100)
     serial_number = models.CharField(max_length=100, unique=True)
     description = models.TextField()
-    stock_quantity = models.IntegerField(default=0)
+    stock_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     warranty_months = models.IntegerField(default=12)
