@@ -11,9 +11,7 @@ from reportlab.platypus import Table, TableStyle
 
 @shared_task
 def process_order(order_id):
-    """
-    Process order in background, handle inventory updates and payment processing
-    """
+
     # Simulate processing time
     time.sleep(5)
 
@@ -81,6 +79,15 @@ def process_order(order_id):
         ('GRID', (0, 0), (-1, -2), 1, colors.black),
     ]))
 
+    # Add payment information after the table
+    payment_y = y_position - 80 - (len(data) * 20) - 20
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, payment_y, "Payment Information:")
+    p.setFont("Helvetica", 12)
+    p.drawString(50, payment_y - 20, f"Card Holder: {order.card_holder}")
+    p.drawString(50, payment_y - 40, f"Card Last Four: **** **** **** {order.card_last_four}")
+    p.drawString(50, payment_y - 60, f"Expiry Date: {order.expiry_date}")
+
     table.wrapOn(p, width - 100, height)
     table.drawOn(p, 50, y_position - 80 - (len(data) * 20))
 
@@ -98,8 +105,7 @@ def process_order(order_id):
     Payment Information:
     - Card Last Four: {order.card_last_four}
     - Card Holder: {order.card_holder}
-    - Payment Info: {order.payment_info}
-    - Last Updated: {order.updated_at.strftime('%Y-%m-%d %H:%M')}
+    - Expiry Date: {order.expiry_date}
     """
 
     # Create email with attachment
@@ -107,8 +113,6 @@ def process_order(order_id):
         subject=f"Order #{order_id} Confirmation",
         body=f"""
         Your order #{order_id} has been received and is being processed.
-
-        {additional_info}
 
         Please find attached the details of your order.
         If you have any questions, feel free to reach out to us.
