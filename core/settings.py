@@ -196,7 +196,7 @@ REDIS_HOST = os.environ.get(
 REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
-# Cache settings
+# Cache settings - optimize for images
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -204,13 +204,16 @@ CACHES = {
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "IGNORE_EXCEPTIONS": True,  # Don't crash on Redis connection issues
+            "SOCKET_CONNECT_TIMEOUT": 5,  # Faster timeouts for image caching
+            "SOCKET_TIMEOUT": 5,
+            "MAX_ENTRIES": 1000,  # Limit number of entries to avoid memory issues
         },
-        "KEY_PREFIX": "ecommerce",
+        "KEY_PREFIX": "img_cache",
     }
 }
 
-# Cache timeout in seconds (15 minutes)
-CACHE_TTL = 60 * 15
+# Cache timeout for images in seconds (1 day)
+CACHE_TTL = 60 * 60 * 24
 
 # Use Redis for session storage as well
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
