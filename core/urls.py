@@ -45,6 +45,8 @@ urlpatterns = [
     path("api/carts/items/", CartViewSet.get_items, name="get_items"),
     path("api/carts/update/", CartViewSet.update_item, name="update_item"),
     path("api/carts/clear/", CartViewSet.clear_cart, name="clear_cart"),
+    path("api/orders/<int:pk>/cancel_order/", OrderViewSet.cancel_order, name="cancel_order"),
+
     path(
         "api/products/add-product/",
         ProductViewSet.create_product_api,
