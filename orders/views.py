@@ -100,7 +100,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response({"status": f"Order status updated to {new_status}"})
 
-    @action(detail=True, methods=["post"], url_path="cancel")
+    @action(detail=True, methods=["post"])
     def cancel_order(self, request, pk=None):
         order = self.get_object()
         if order.status != "PROCESSING":
