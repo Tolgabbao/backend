@@ -100,7 +100,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response({"status": f"Order status updated to {new_status}"})
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], url_path="cancel")
     def cancel_order(self, request, pk=None):
         order = self.get_object()
         if order.status != "PROCESSING":
@@ -151,14 +151,23 @@ class CartViewSet(viewsets.ModelViewSet):
                 cart, _ = Cart.objects.get_or_create(session_id=session_id)
                 cache_key = f"{CART_CACHE_KEY_PREFIX}session_{session_id}"
 
-            # Add or update item in cart
-            cart_item, created = CartItem.objects.get_or_create(
-                cart=cart, product=product, defaults={"quantity": quantity}
-            )
+            # Check current quantity in cart for this product
+            cart_item = CartItem.objects.filter(cart=cart, product=product).first()
+            current_quantity = cart_item.quantity if cart_item else 0
+            total_requested = current_quantity + quantity
 
-            if not created:
-                cart_item.quantity += quantity
+            if total_requested > product.stock_quantity:
+                return Response(
+                    {"error": f"Cannot add more than {product.stock_quantity} items to cart. Only {product.stock_quantity - current_quantity} left."},
+                    status=400
+                )
+
+            # Add or update item in cart
+            if cart_item:
+                cart_item.quantity = total_requested
                 cart_item.save()
+            else:
+                CartItem.objects.create(cart=cart, product=product, quantity=quantity)
 
             # Clear cache
             cache.delete(cache_key)
@@ -229,11 +238,13 @@ class CartViewSet(viewsets.ModelViewSet):
             # Get cart for user or session
             if request.user.is_authenticated:
                 cart = Cart.objects.get(user=request.user)
+                cache_key = f"{CART_CACHE_KEY_PREFIX}user_{request.user.id}"
             else:
                 session_id = getattr(request, "cart_session_id", None)
                 if not session_id:
                     return Response({"error": "No session ID available"}, status=400)
                 cart = Cart.objects.get(session_id=session_id)
+                cache_key = f"{CART_CACHE_KEY_PREFIX}session_{session_id}"
 
             # Find the cart item
             cart_item = CartItem.objects.filter(cart=cart, product=product).first()
@@ -241,15 +252,19 @@ class CartViewSet(viewsets.ModelViewSet):
             if not cart_item:
                 return Response({"error": "Item not in cart"}, status=404)
 
+            # Check if the requested quantity exceeds available stock
+            if quantity > product.stock_quantity:
+                return Response(
+                    {"error": f"Cannot add more than {product.stock_quantity} items. Only {product.stock_quantity} in stock."},
+                    status=400
+                )
+
             # Update quantity
             cart_item.quantity = max(1, quantity)  # Ensure quantity is at least 1
             cart_item.save()
 
             # Clear cache
-            if request.user.is_authenticated:
-                cache.delete(f"cart_user_{request.user.id}")
-            else:
-                cache.delete(f"cart_session_{getattr(request, 'cart_session_id', '')}")
+            cache.delete(cache_key)
 
             serializer = CartSerializer(cart)
             return Response(serializer.data)

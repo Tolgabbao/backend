@@ -141,7 +141,7 @@ class ProductRatingSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductRating
         fields = ["id", "product", "rating", "created_at"]
-        read_only_fields = ["user"]
+        read_only_fields = ["user", "product"]  # Make product read-only as we'll set it in the view
 
 
 class ProductCommentSerializer(serializers.ModelSerializer):
@@ -150,4 +150,4 @@ class ProductCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductComment
         fields = ["id", "product", "comment", "is_approved", "created_at", "user_name"]
-        read_only_fields = ["user", "is_approved"]
+        read_only_fields = ["user", "is_approved", "product"]  # Add product to read-only fields
