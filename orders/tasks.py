@@ -7,36 +7,17 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import Table, TableStyle
+from .models import Order # Import Order model at the top
 
-
-@shared_task
-def process_order(order_id):
-
-    # Simulate processing time
-    time.sleep(5)
-
-    from .models import Order
-
-    order = Order.objects.get(id=order_id)
-
-    # Update inventory for each product in order
-    for item in order.items.all():
-        product = item.product
-        product.stock_quantity -= item.quantity
-        product.save()
-
-    # Update order status
-    order.status = "PROCESSING"
-    order.save()
-
-    # Generate PDF with order details
+def generate_order_pdf(order: Order) -> BytesIO:
+    """Generates a PDF invoice for the given order."""
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
     # Add header
     p.setFont("Helvetica-Bold", 16)
-    p.drawString(50, height - 50, f"Order #{order.id} - Confirmation")
+    p.drawString(50, height - 50, f"Order #{order.id} - Invoice") # Changed Confirmation to Invoice
     p.setFont("Helvetica", 12)
     p.drawString(50, height - 70, f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}")
     p.drawString(50, height - 90, f"Customer: {order.user.username}")
@@ -46,7 +27,8 @@ def process_order(order_id):
     p.drawString(50, height - 120, "Shipping Address:")
     p.setFont("Helvetica", 12)
     y_position = height - 140
-    for line in order.shipping_address.split('\n'):
+    address_lines = order.shipping_address.split('\n') if order.shipping_address else ["N/A"]
+    for line in address_lines:
         p.drawString(50, y_position, line)
         y_position -= 20
 
@@ -63,7 +45,7 @@ def process_order(order_id):
         subtotal = price * quantity
         data.append([product_name, str(quantity), f"${price:.2f}", f"${subtotal:.2f}"])
 
-    # Add totals - Fix the format specifier by removing the extra colon
+    # Add totals
     data.append(["", "", "Total:", f"${float(order.total_amount):.2f}"])
 
     # Create table
@@ -79,8 +61,14 @@ def process_order(order_id):
         ('GRID', (0, 0), (-1, -2), 1, colors.black),
     ]))
 
+    # Calculate table height to position payment info correctly
+    table_height = table.wrap(width - 100, height)[1]
+    table_y = y_position - 40 - table_height # Position table below "Order Items:" title
+
+    table.drawOn(p, 50, table_y)
+
     # Add payment information after the table
-    payment_y = y_position - 80 - (len(data) * 20) - 20
+    payment_y = table_y - 20 # Start payment info below the table
     p.setFont("Helvetica-Bold", 14)
     p.drawString(50, payment_y, "Payment Information:")
     p.setFont("Helvetica", 12)
@@ -88,11 +76,8 @@ def process_order(order_id):
     p.drawString(50, payment_y - 40, f"Card Last Four: **** **** **** {order.card_last_four}")
     p.drawString(50, payment_y - 60, f"Expiry Date: {order.expiry_date}")
 
-    table.wrapOn(p, width - 100, height)
-    table.drawOn(p, 50, y_position - 80 - (len(data) * 20))
-
-    # Add footer - use standard Helvetica instead of Helvetica-Italic
-    p.setFont("Helvetica", 10)  # Changed from Helvetica-Italic to Helvetica
+    # Add footer
+    p.setFont("Helvetica", 10)
     p.drawString(50, 50, "Thank you for your order! If you have any questions, please contact our customer service.")
 
     p.showPage()
@@ -100,13 +85,27 @@ def process_order(order_id):
 
     # Move to the beginning of the buffer
     buffer.seek(0)
+    return buffer
 
-    additional_info = f"""
-    Payment Information:
-    - Card Last Four: {order.card_last_four}
-    - Card Holder: {order.card_holder}
-    - Expiry Date: {order.expiry_date}
-    """
+@shared_task
+def process_order(order_id):
+    # Simulate processing time
+    time.sleep(5)
+
+    order = Order.objects.get(id=order_id)
+
+    # Update inventory for each product in order
+    for item in order.items.all():
+        product = item.product
+        product.stock_quantity -= item.quantity
+        product.save()
+
+    # Update order status
+    order.status = "PROCESSING"
+    order.save()
+
+    # Generate PDF using the refactored function
+    pdf_buffer = generate_order_pdf(order)
 
     # Create email with attachment
     email = EmailMessage(
@@ -123,7 +122,7 @@ def process_order(order_id):
     )
 
     # Attach PDF to email
-    email.attach(f'order_{order_id}_confirmation.pdf', buffer.getvalue(), 'application/pdf')
+    email.attach(f'order_{order_id}_invoice.pdf', pdf_buffer.getvalue(), 'application/pdf') # Renamed to invoice
 
     # Send email
     email.send(fail_silently=False)

@@ -6,10 +6,11 @@ from django.core.cache import cache
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.http import HttpResponse # Import HttpResponse
 from .models import Order, OrderItem, Cart, CartItem
 from products.models import Product
 from .serializers import OrderSerializer, CartSerializer
-from .tasks import process_order, send_order_status_update
+from .tasks import process_order, send_order_status_update, generate_order_pdf # Import generate_order_pdf
 
 # Cache key patterns
 # Remove ORDER_LIST_CACHE_KEY_PREFIX and ORDER_DETAIL_CACHE_KEY_PREFIX
@@ -110,6 +111,27 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.status = "CANCELLED"
         order.save()
         return Response({"status": "order cancelled"})
+
+    @action(detail=True, methods=['get'], url_path='download-invoice')
+    def download_invoice(self, request, pk=None):
+        """
+        Generates and returns the PDF invoice for the order.
+        """
+        order = self.get_object()
+
+        # Check if the user requesting is the owner of the order or an admin/staff
+        if not (request.user == order.user or request.user.is_staff or request.user.is_superuser):
+             return Response({"detail": "Not authorized to view this invoice."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            pdf_buffer = generate_order_pdf(order)
+            response = HttpResponse(pdf_buffer, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="order_{order.id}_invoice.pdf"'
+            return response
+        except Exception as e:
+            # Log the error e
+            print(f"Error generating PDF for order {order.id}: {e}")
+            return Response({"error": "Failed to generate PDF invoice."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class CartViewSet(viewsets.ModelViewSet):
