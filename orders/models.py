@@ -21,6 +21,13 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     shipping_address = models.TextField()
+    address = models.ForeignKey(
+        "accounts.Address", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="orders"
+    )
     # Add payment information fields
     card_last_four = models.CharField(max_length=4)
     card_holder = models.CharField(max_length=100)
