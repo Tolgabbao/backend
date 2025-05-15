@@ -11,6 +11,8 @@ from .models import Order, OrderItem, Cart, CartItem
 from products.models import Product
 from .serializers import OrderSerializer, CartSerializer
 from .tasks import process_order, send_order_status_update, generate_order_pdf # Import generate_order_pdf
+from django.utils import timezone
+from datetime import datetime
 
 # Cache key patterns
 # Remove ORDER_LIST_CACHE_KEY_PREFIX and ORDER_DETAIL_CACHE_KEY_PREFIX
@@ -23,9 +25,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_customer():
+        if user.user_type == 'PRODUCT_MANAGER':
+            return Order.objects.all()
+        elif user.user_type == 'SALES_MANAGER':
+            return Order.objects.all()
+        elif user.is_customer():
             return Order.objects.filter(user=user)
-        return Order.objects.all()
+        return Order.objects.none()
 
     # Remove cache decorator
     def list(self, request, *args, **kwargs):
@@ -132,6 +138,115 @@ class OrderViewSet(viewsets.ModelViewSet):
             # Log the error e
             print(f"Error generating PDF for order {order.id}: {e}")
             return Response({"error": "Failed to generate PDF invoice."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def approve_order(self, request, pk=None):
+        """Product manager approves an order for delivery"""
+        if request.user.user_type != 'PRODUCT_MANAGER':
+            return Response(
+                {"error": "Only product managers can approve orders"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        order = self.get_object()
+        order.is_approved = True
+        order.status = 'IN_TRANSIT'
+        order.save()
+        
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=['post'])
+    def update_delivery_status(self, request, pk=None):
+        """Product manager updates delivery status"""
+        if request.user.user_type != 'PRODUCT_MANAGER':
+            return Response(
+                {"error": "Only product managers can update delivery status"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        order = self.get_object()
+        new_status = request.data.get('status')
+        delivery_notes = request.data.get('delivery_notes', '')
+        
+        if new_status not in dict(Order.STATUS_CHOICES):
+            return Response(
+                {'error': 'Invalid status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        order.status = new_status
+        order.delivery_notes = delivery_notes
+        
+        if new_status == 'DELIVERED':
+            order.delivered_at = timezone.now()
+        
+        order.save()
+        
+        # Send status update notification
+        send_order_status_update.delay(order.id, new_status)
+        
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=False, methods=['get'])
+    def pending_deliveries(self, request):
+        """Get all pending deliveries for product managers"""
+        if request.user.user_type != 'PRODUCT_MANAGER':
+            return Response(
+                {"error": "Only product managers can view pending deliveries"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        orders = self.get_queryset().filter(status='IN_TRANSIT')
+        serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def sales_report(self, request):
+        """Generate sales report for sales managers"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response(
+                {"error": "Only sales managers can view sales reports"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if not start_date or not end_date:
+            return Response(
+                {"error": "Both start_date and end_date are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        orders = self.get_queryset().filter(
+            created_at__range=[start_date, end_date],
+            status__in=['DELIVERED', 'IN_TRANSIT']
+        )
+        
+        total_revenue = sum(order.total_amount for order in orders)
+        total_cost = sum(
+            sum(item.price_at_time * 0.5 * item.quantity for item in order.items.all())
+            for order in orders
+        )
+        
+        report = {
+            'total_orders': orders.count(),
+            'total_revenue': total_revenue,
+            'total_cost': total_cost,
+            'total_profit': total_revenue - total_cost,
+            'orders': self.get_serializer(orders, many=True).data
+        }
+        
+        return Response(report)
 
 
 class CartViewSet(viewsets.ModelViewSet):

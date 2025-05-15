@@ -11,6 +11,7 @@ class Order(models.Model):
         ("PROCESSING", "Processing"),
         ("IN_TRANSIT", "In Transit"),
         ("DELIVERED", "Delivered"),
+        ("CANCELLED", "Cancelled")
     )
 
     user = models.ForeignKey("accounts.User", on_delete=models.CASCADE)
@@ -32,6 +33,16 @@ class Order(models.Model):
     card_last_four = models.CharField(max_length=4)
     card_holder = models.CharField(max_length=100)
     expiry_date = models.CharField(max_length=5)  # MM/YY format
+    # Add delivery tracking fields
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    delivery_notes = models.TextField(blank=True)
+    is_approved = models.BooleanField(default=False)  # For product manager approval
+
+    def __str__(self):
+        return f"Order {self.id} - {self.user.username}"
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class OrderItem(models.Model):

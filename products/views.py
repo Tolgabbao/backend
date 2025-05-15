@@ -11,13 +11,14 @@ import logging
 from django.db.utils import ProgrammingError
 
 from orders.models import Order
-from .models import Product, Category, ProductRating, ProductComment, ProductImage
+from .models import Product, Category, ProductRating, ProductComment, ProductImage, Wishlist
 from .serializers import (
     ProductSerializer,
     CategorySerializer,
     ProductRatingSerializer,
     ProductCommentSerializer,
     ProductImageSerializer,
+    WishlistSerializer,
 )
 from .tasks import update_product_ratings
 
@@ -420,6 +421,169 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         # If no image found, return 404
         return HttpResponse(status=404)
+
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def add_to_wishlist(self, request, pk=None):
+        """Add a product to the user's wishlist"""
+        product = self.get_object()
+        user = request.user
+        
+        # Check if already in wishlist
+        wishlist_item, created = Wishlist.objects.get_or_create(user=user, product=product)
+        
+        if created:
+            return Response({"message": f"{product.name} added to wishlist"}, status=status.HTTP_201_CREATED)
+        else:
+            return Response({"message": f"{product.name} is already in your wishlist"}, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=["delete"], permission_classes=[permissions.IsAuthenticated])
+    def remove_from_wishlist(self, request, pk=None):
+        """Remove a product from the user's wishlist"""
+        product = self.get_object()
+        user = request.user
+        
+        try:
+            wishlist_item = Wishlist.objects.get(user=user, product=product)
+            wishlist_item.delete()
+            return Response({"message": f"{product.name} removed from wishlist"}, status=status.HTTP_200_OK)
+        except Wishlist.DoesNotExist:
+            return Response({"error": "Product not in wishlist"}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def my_wishlist(self, request):
+        """Get the current user's wishlist"""
+        wishlist = Wishlist.objects.filter(user=request.user).select_related('product')
+        serializer = WishlistSerializer(wishlist, many=True, context={"request": request})
+        return Response(serializer.data)
+        
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    def set_discount(self, request, pk=None):
+        """Set a discount on a product (sales manager only)"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response(
+                {"error": "Only sales managers can set discounts"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        product = self.get_object()
+        discount_percent = request.data.get("discount_percent", 0)
+        
+        try:
+            discount_percent = float(discount_percent)
+            if discount_percent < 0 or discount_percent > 100:
+                return Response(
+                    {"error": "Discount percentage must be between 0 and 100"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # If original price is not set, use current price
+            if not product.original_price or product.original_price == 0:
+                product.original_price = product.price
+                
+            # Update discount and recalculate price
+            product.discount_percent = discount_percent
+            product.save()  # The save method handles price calculation
+            
+            # Notify users who have this product in their wishlist
+            if discount_percent > 0:
+                from .tasks import notify_wishlist_discount
+                notify_wishlist_discount.delay(product.id, discount_percent)
+            
+            serializer = self.get_serializer(product)
+            return Response(serializer.data)
+            
+        except ValueError:
+            return Response(
+                {"error": "Invalid discount percentage"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    def approve_price(self, request, pk=None):
+        """Approve a product's price (sales manager only)"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response(
+                {"error": "Only sales managers can approve prices"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        product = self.get_object()
+        
+        if product.price <= 0:
+            return Response(
+                {"error": "Cannot approve a product with price of 0 or less"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        product.price_approved = True
+        product.is_visible = request.data.get("is_visible", True)  # Optionally make product visible
+        product.save()
+        
+        serializer = self.get_serializer(product)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    def bulk_discount(self, request):
+        """Apply discount to multiple products at once (sales manager only)"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response(
+                {"error": "Only sales managers can set discounts"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        product_ids = request.data.get("product_ids", [])
+        discount_percent = request.data.get("discount_percent", 0)
+        
+        if not product_ids:
+            return Response(
+                {"error": "No products specified"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            discount_percent = float(discount_percent)
+            if discount_percent < 0 or discount_percent > 100:
+                return Response(
+                    {"error": "Discount percentage must be between 0 and 100"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get products that exist
+            products = Product.objects.filter(id__in=product_ids)
+            
+            if not products.exists():
+                return Response(
+                    {"error": "None of the specified products were found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            updated_count = 0
+            for product in products:
+                # If original price is not set, use current price
+                if not product.original_price or product.original_price == 0:
+                    product.original_price = product.price
+                    
+                # Update discount
+                product.discount_percent = discount_percent
+                product.save()
+                updated_count += 1
+                
+                # Notify users who have this product in their wishlist
+                if discount_percent > 0:
+                    from .tasks import notify_wishlist_discount
+                    notify_wishlist_discount.delay(product.id, discount_percent)
+            
+            return Response({
+                "message": f"Discount of {discount_percent}% applied to {updated_count} products",
+                "updated_products": updated_count,
+                "total_requested": len(product_ids)
+            })
+                
+        except ValueError:
+            return Response(
+                {"error": "Invalid discount percentage"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 @api_view(["GET"])

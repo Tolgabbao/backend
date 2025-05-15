@@ -30,6 +30,9 @@ class OrderSerializer(serializers.ModelSerializer):
     )
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
+    delivered_at = serializers.DateTimeField(read_only=True)
+    delivery_notes = serializers.CharField(read_only=True)
+    is_approved = serializers.BooleanField(read_only=True)
     user = serializers.HiddenField(
         default=serializers.CurrentUserDefault(), write_only=True
     )
@@ -57,8 +60,11 @@ class OrderSerializer(serializers.ModelSerializer):
             "expiry_date",
             "updated_at",
             "payment_info",
+            "delivered_at",
+            "delivery_notes",
+            "is_approved"
         ]
-        read_only_fields = ["user", "status", "created_at", "updated_at"]
+        read_only_fields = ["user", "status", "created_at", "updated_at", "delivered_at", "delivery_notes", "is_approved"]
         
     def get_address_details(self, obj):
         if obj.address:

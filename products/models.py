@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db.models import Avg
+from decimal import Decimal
 
 
 class Category(models.Model):
@@ -22,21 +23,48 @@ class Product(models.Model):
     description = models.TextField()
     stock_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     price = models.DecimalField(max_digits=10, decimal_places=2)
+    original_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_percent = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)]
+    )
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     warranty_months = models.IntegerField(default=12)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     distributor_info = models.TextField()
     is_visible = models.BooleanField(default=False)
+    price_approved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     sales_count = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return self.name
+        
+    def save(self, *args, **kwargs):
+        # If discount_percent has changed, recalculate price from original_price
+        if self.discount_percent > 0 and self.original_price > 0:
+            discount_amount = (self.original_price * Decimal(self.discount_percent)) / Decimal(100)
+            self.price = self.original_price - discount_amount
+        elif self.original_price > 0 and self.discount_percent == 0:
+            # If there's no discount, price equals original price
+            self.price = self.original_price
+            
+        # Make product visible only if price is approved
+        if not self.price_approved:
+            self.is_visible = False
+            
+        super().save(*args, **kwargs)
 
     @property
     def average_rating(self):
         return self.ratings.aggregate(Avg("rating"))["rating__avg"]
+        
+    @property
+    def has_discount(self):
+        return self.discount_percent > 0
 
     @property
     def main_image(self):
@@ -101,3 +129,17 @@ class ProductComment(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - {self.user.username}"
+
+
+class Wishlist(models.Model):
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="wishlists")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="wishlists")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('user', 'product')
+        
+    def __str__(self):
+        return f"{self.user.username}'s wishlist - {self.product.name}"

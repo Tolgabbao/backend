@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Product, Category, ProductRating, ProductComment, ProductImage
+from .models import Product, Category, ProductRating, ProductComment, ProductImage, Wishlist
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -43,14 +43,17 @@ class ProductSerializer(serializers.ModelSerializer):
     )
     average_rating = serializers.FloatField(read_only=True)
     is_visible = serializers.BooleanField(default=True)
+    discount_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
+    original_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    price_approved = serializers.BooleanField(default=False, read_only=True)
+    has_discount = serializers.BooleanField(read_only=True)
+    in_wishlist = serializers.SerializerMethodField(read_only=True)
 
     # Multiple images handling
     images = ProductImageSerializer(many=True, read_only=True)
-    main_image_url = serializers.SerializerMethodField()
-
-    # New image upload field for creating products with images
+    main_image_url = serializers.SerializerMethodField()    # New image upload field for creating products with images
     image_upload = serializers.ImageField(required=False, write_only=True)
-
+    
     class Meta:
         model = Product
         fields = [
@@ -61,21 +64,25 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "stock_quantity",
             "price",
+            "original_price",
+            "discount_percent",
+            "has_discount",
             "cost_price",
             "warranty_months",
             "category",
             "category_id",
             "distributor_info",
             "is_visible",
+            "price_approved",
             "average_rating",
             "images",
             "main_image_url",
             "image_upload",
             "created_at",
             "updated_at",
-        ]
+            "in_wishlist",        ]
         extra_kwargs = {"is_visible": {"write_only": True}}
-
+        
     def get_main_image_url(self, obj):
         # Return the absolute URL for the main image
         if obj.main_image:
@@ -83,6 +90,13 @@ class ProductSerializer(serializers.ModelSerializer):
             if request is not None:
                 return request.build_absolute_uri(obj.main_image)
         return obj.main_image
+    
+    def get_in_wishlist(self, obj):
+        """Check if the product is in the user's wishlist"""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return Wishlist.objects.filter(user=request.user, product=obj).exists()
+        return False
 
     def create(self, validated_data):
         # Handle image upload if provided
@@ -151,3 +165,13 @@ class ProductCommentSerializer(serializers.ModelSerializer):
         model = ProductComment
         fields = ["id", "product", "comment", "is_approved", "created_at", "user_name"]
         read_only_fields = ["user", "is_approved", "product"]  # Add product to read-only fields
+
+
+class WishlistSerializer(serializers.ModelSerializer):
+    product_details = ProductSerializer(source="product", read_only=True)
+    
+    class Meta:
+        model = Wishlist
+        fields = ["id", "user", "product", "product_details", "created_at"]
+        read_only_fields = ["user", "created_at"]
+        extra_kwargs = {"product": {"write_only": True}}
