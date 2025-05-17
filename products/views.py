@@ -287,9 +287,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             update_product_ratings.delay(product.id)
 
             return Response({"message": message, "data": serializer.data})
-        return Response(serializer.errors, status=400)
-
-    @action(detail=True, methods=["post"])
+        return Response(serializer.errors, status=400)    @action(detail=True, methods=["post"])
     def comment_product(self, request, pk=None):
         product = self.get_object()
         user = request.user
@@ -311,7 +309,44 @@ class ProductViewSet(viewsets.ModelViewSet):
                 "message": "Comment submitted successfully and is pending approval", 
                 "data": serializer.data
             })
-        return Response(serializer.errors, status=400)    @action(detail=True, methods=["post"])
+        return Response(serializer.errors, status=400)
+        
+    @action(detail=True, methods=["post"])
+    def update_stock(self, request, pk=None):
+        """Update product stock quantity (product manager only)"""
+        if not (request.user.is_staff or request.user.user_type == 'PRODUCT_MANAGER'):
+            return Response(
+                {"error": "Only product managers can update stock"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        product = self.get_object()
+        stock_quantity = request.data.get('stock_quantity')
+        
+        if stock_quantity is None:
+            return Response(
+                {"error": "Stock quantity is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            stock_quantity = int(stock_quantity)
+            if stock_quantity < 0:
+                return Response(
+                    {"error": "Stock quantity cannot be negative"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except ValueError:
+            return Response(
+                {"error": "Stock quantity must be a valid number"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        product.stock_quantity = stock_quantity
+        product.save()
+        
+        return Response(self.get_serializer(product).data)
+    @action(detail=True, methods=["post"])
     def approve_comment(self, request, pk=None):
         """Approve a product comment (admin or product manager only)"""
         # Check if user is staff or product manager

@@ -199,7 +199,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        orders = self.get_queryset().filter(status='IN_TRANSIT')
+        # Get all orders with status 'IN_TRANSIT' or 'PROCESSING'
+        orders = self.get_queryset().filter(
+            status__in=['IN_TRANSIT', 'PROCESSING']
+            )
         serializer = self.get_serializer(orders, many=True)
         return Response(serializer.data)
 
