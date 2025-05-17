@@ -27,6 +27,7 @@ def log_in(request):
                 "username": user.username,
                 "email": user.email,
                 "date_joined": user.date_joined,
+                "user_type": user.user_type,
                 "is_staff": user.is_admin,
                 "addresses": user.get_addresses(),
                 "main_address": user.get_main_address_dict()
@@ -39,6 +40,7 @@ def log_in(request):
                 "username": user.username,
                 "email": user.email,
                 "id": user.id,
+                "user_type": user.user_type,
                 "is_staff": user.is_admin,
                 "addresses": user.get_addresses(),
                 "main_address": user.get_main_address_dict()
