@@ -341,9 +341,19 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Stock quantity must be a valid number"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+        
+        # Check if product is going from out of stock to in stock
+        current_stock = product.stock_quantity
+        is_back_in_stock = current_stock == 0 and stock_quantity > 0
+        
+        # Update stock quantity
         product.stock_quantity = stock_quantity
         product.save()
+        
+        # If product is back in stock, notify users who have it in their wishlist
+        if is_back_in_stock:
+            from .tasks import notify_wishlist_back_in_stock
+            notify_wishlist_back_in_stock.delay(product.id)
         
         return Response(self.get_serializer(product).data)
     @action(detail=True, methods=["post"])

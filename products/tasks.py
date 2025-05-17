@@ -46,6 +46,65 @@ def update_product_ratings(product_id):
 
 
 @shared_task
+def notify_wishlist_back_in_stock(product_id):
+    """
+    Notify users when a product in their wishlist is back in stock
+    """
+    from .models import Product, Wishlist
+    from django.contrib.auth import get_user_model
+    
+    User = get_user_model()
+    
+    try:
+        product = Product.objects.get(id=product_id)
+        
+        # Get all users who have this product in their wishlist
+        wishlist_items = Wishlist.objects.filter(product_id=product_id)
+        
+        if not wishlist_items.exists():
+            return f"No users have product {product_id} in their wishlist"
+        
+        sent_count = 0
+        for item in wishlist_items:
+            user = item.user
+            
+            # Send email notification
+            subject = f"Good news! {product.name} is back in stock"
+            message = f"""
+            Hello {user.username},
+            
+            Great news! An item in your wishlist is back in stock:
+            
+            {product.name}
+            
+            Price: ${product.price}
+            
+            Don't miss out - limited quantities may be available.
+            
+            Visit our store to purchase before it's gone again:
+            http://localhost:3000/products/{product.id}
+            
+            Thanks for shopping with us!
+            """
+            
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+            sent_count += 1
+            
+        return f"Sent back-in-stock notifications to {sent_count} users for product {product_id}"
+    
+    except Product.DoesNotExist:
+        return f"Product with ID {product_id} not found"
+    except Exception as e:
+        return f"Error sending back-in-stock notifications: {str(e)}"
+
+
+@shared_task
 def notify_wishlist_discount(product_id, discount_percent):
     """
     Notify users when a product in their wishlist has a discount applied
