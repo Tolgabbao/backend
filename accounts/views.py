@@ -72,6 +72,7 @@ def get_user(request):
             "username": request.user.username,
             "email": request.user.email,
             "date_joined": request.user.date_joined,
+            "user_type": request.user.user_type,
             "is_staff": request.user.is_admin(),
             "addresses": request.user.get_addresses(),
             "main_address": request.user.get_main_address_dict()

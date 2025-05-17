@@ -116,8 +116,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         order.status = "CANCELLED"
         order.save()
-        return Response({"status": "order cancelled"})
-
+        return Response({"status": "order cancelled"})    
     @action(detail=True, methods=['get'], url_path='download-invoice')
     def download_invoice(self, request, pk=None):
         """
@@ -125,8 +124,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         """
         order = self.get_object()
 
-        # Check if the user requesting is the owner of the order or an admin/staff
-        if not (request.user == order.user or request.user.is_staff or request.user.is_superuser):
+        # Check if the user requesting is the owner of the order, admin/staff, or a manager
+        if not (request.user == order.user or 
+                request.user.is_staff or 
+                request.user.is_superuser or
+                request.user.user_type == 'PRODUCT_MANAGER' or 
+                request.user.user_type == 'SALES_MANAGER'):
              return Response({"detail": "Not authorized to view this invoice."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
