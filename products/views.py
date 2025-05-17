@@ -108,15 +108,27 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         result = serializer.save()
         return result
-
-    @action(detail=True, methods=["post"], url_path="add-product")
+    
+    @action(detail=False, methods=["post"], url_path="add-product")
     def create_product_api(self, request):
         """Create a product via API (admin only)"""
-        serializer = ProductSerializer(data=request.data)
+        # Check permissions
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff can create products"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, 
+                status=status.HTTP_201_CREATED, 
+                headers=headers
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_update(self, serializer):
         instance = serializer.instance
