@@ -311,11 +311,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                 "message": "Comment submitted successfully and is pending approval", 
                 "data": serializer.data
             })
-        return Response(serializer.errors, status=400)
-
-    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
+        return Response(serializer.errors, status=400)    @action(detail=True, methods=["post"])
     def approve_comment(self, request, pk=None):
-        """Approve a product comment (admin only)"""
+        """Approve a product comment (admin or product manager only)"""
+        # Check if user is staff or product manager
+        if not (request.user.is_staff or request.user.user_type == 'PRODUCT_MANAGER'):
+            return Response(
+                {"error": "Only staff and product managers can approve comments"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
         comment_id = request.data.get("comment_id")
         try:
             comment = ProductComment.objects.get(id=comment_id, product__id=pk)
@@ -608,6 +613,24 @@ def get_product_comments(request, product_id):
 
 
 @api_view(["GET"])
+def get_pending_comments(request):
+    """Get pending comments for admin approval"""
+    if not request.user.is_staff and request.user.user_type != 'PRODUCT_MANAGER':
+        return Response(
+            {"error": "Only staff and product managers can view pending comments"}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+        
+    # Get all pending comments
+    comments = ProductComment.objects.filter(is_approved=False).select_related(
+        'product', 'user'
+    ).order_by('-created_at')
+    
+    serializer = ProductCommentSerializer(comments, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["GET"])
 def get_products_by_category(request, category_id):
     # Only return visible products to regular users
     if request.user.is_staff:
@@ -640,3 +663,21 @@ def can_review_product(request, product_id):
     ).exists()
     
     return Response({"can_review": can_review})
+
+
+@api_view(["POST"])
+def approve_comment(request, comment_id):
+    """Approve a specific comment (admin or product manager only)"""
+    if not (request.user.is_staff or request.user.user_type == 'PRODUCT_MANAGER'):
+        return Response(
+            {"error": "Only staff and product managers can approve comments"}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+        
+    try:
+        comment = ProductComment.objects.get(id=comment_id)
+        comment.is_approved = True
+        comment.save()
+        return Response({"message": "Comment approved successfully"})
+    except ProductComment.DoesNotExist:
+        return Response({"error": "Comment not found"}, status=404)

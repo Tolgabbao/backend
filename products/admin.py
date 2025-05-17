@@ -100,6 +100,19 @@ class ProductRatingAdmin(admin.ModelAdmin):
 
 @admin.register(ProductComment)
 class ProductCommentAdmin(admin.ModelAdmin):
-    list_display = ["product", "user", "is_approved", "created_at"]
-    list_filter = ["is_approved"]
+    list_display = ["product", "user", "comment_excerpt", "is_approved", "created_at"]
+    list_filter = ["is_approved", "created_at"]
     search_fields = ["product__name", "user__username", "comment"]
+    list_editable = ["is_approved"]
+    actions = ["approve_comments"]
+    
+    def comment_excerpt(self, obj):
+        if len(obj.comment) > 50:
+            return f"{obj.comment[:50]}..."
+        return obj.comment
+    comment_excerpt.short_description = "Comment"
+    
+    def approve_comments(self, request, queryset):
+        updated = queryset.update(is_approved=True)
+        self.message_user(request, f"{updated} comment(s) have been approved.")
+    approve_comments.short_description = "Approve selected comments"

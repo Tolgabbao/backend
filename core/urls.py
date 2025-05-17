@@ -20,7 +20,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from products.views import ProductViewSet, CategoryViewSet, get_categories, can_review_product, get_product_comments, get_product_ratings
+from products.views import ProductViewSet, CategoryViewSet, get_categories, can_review_product, get_product_comments, get_product_ratings, get_pending_comments, approve_comment
 from orders.views import OrderViewSet, CartViewSet
 from accounts.views import log_in, log_out, get_user, register, address_list, address_detail, set_main_address
 
@@ -64,10 +64,19 @@ urlpatterns = [
         "api/products/<int:product_id>/comments/",
         get_product_comments,
         name="get_product_comments",
-    ),
-    path(
+    ),    path(
         "api/products/<int:product_id>/ratings/",
         get_product_ratings,
         name="get_product_ratings",
+    ),
+    path(
+        "api/comments/pending/",
+        get_pending_comments,
+        name="get_pending_comments",
+    ),
+    path(
+        "api/comments/<int:comment_id>/approve/",
+        approve_comment,
+        name="approve_comment",
     ),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
