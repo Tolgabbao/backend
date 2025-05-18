@@ -1,6 +1,8 @@
 from rest_framework import serializers
-from .models import Order, OrderItem, Cart, CartItem
+from .models import Order, OrderItem, Cart, CartItem, RefundRequest
 from accounts.models import Address
+from django.utils import timezone
+from datetime import timedelta
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -65,7 +67,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "is_approved"
         ]
         read_only_fields = ["user", "status", "created_at", "updated_at", "delivered_at", "delivery_notes", "is_approved"]
-        
+
     def get_address_details(self, obj):
         if obj.address:
             return {
@@ -90,11 +92,11 @@ class OrderSerializer(serializers.ModelSerializer):
             data['card_last_four'] = payment_info.get('card_last_four')
             data['card_holder'] = payment_info.get('card_holder')
             data['expiry_date'] = payment_info.get('expiry_date')
-        
+
         # Validate address_id if provided
         user = self.context['request'].user
         address_id = data.get('address_id')
-        
+
         if address_id:
             try:
                 # Ensure the address belongs to the user
@@ -110,23 +112,23 @@ class OrderSerializer(serializers.ModelSerializer):
             main_address = user.get_main_address()
             if main_address:
                 data['address'] = main_address
-        
+
         # Ensure shipping_address is provided or can be derived from address
         if not data.get('shipping_address') and 'address' in data:
             address = data['address']
             data['shipping_address'] = f"{address.street_address}, {address.city}, {address.state}, {address.postal_code}, {address.country}"
         elif not data.get('shipping_address'):
             raise serializers.ValidationError({"shipping_address": "This field is required when no address is provided."})
-        
+
         return data
 
     def create(self, validated_data):
         # Remove items field from validated_data as we'll handle it separately
         validated_data.pop('items', None)
-        
+
         # Remove address_id as we've already set the address object in validate
         validated_data.pop('address_id', None)
-        
+
         # shipping_address is now handled in validate method
 
         # Create order instance
@@ -155,3 +157,72 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_total(self, obj):
         return sum(item.product.price * item.quantity for item in obj.items.all())
+
+
+class RefundRequestSerializer(serializers.ModelSerializer):
+    product_name = serializers.SerializerMethodField()
+    username = serializers.SerializerMethodField()
+    order_id = serializers.SerializerMethodField()
+    approved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RefundRequest
+        fields = [
+            'id',
+            'order_item',
+            'user',
+            'reason',
+            'status',
+            'created_at',
+            'updated_at',
+            'approved_by',
+            'approval_date',
+            'rejection_reason',
+            'product_name',
+            'username',
+            'order_id',
+            'approved_by_name'
+        ]
+        read_only_fields = ['user', 'status', 'approved_by', 'approval_date', 'rejection_reason']
+
+    def get_product_name(self, obj):
+        return obj.order_item.product.name if obj.order_item.product else "Product Removed"
+
+    def get_username(self, obj):
+        return obj.user.username
+
+    def get_order_id(self, obj):
+        return obj.order_item.order.id
+
+    def get_approved_by_name(self, obj):
+        return obj.approved_by.username if obj.approved_by else None
+
+    def validate_order_item(self, value):
+        """
+        Validate that:
+        1. The order is in DELIVERED state
+        2. The order was delivered less than 30 days ago
+        3. The order item doesn't already have a pending or approved refund request
+        """
+        # Check if order is delivered
+        if value.order.status != "DELIVERED":
+            raise serializers.ValidationError("Refund can only be requested for delivered orders.")
+
+        # Check if order was delivered less than 30 days ago
+        if not value.order.delivered_at or value.order.delivered_at < timezone.now() - timedelta(days=30):
+            raise serializers.ValidationError("Refund can only be requested within 30 days after delivery.")
+
+        # Check if this item already has a pending or approved refund request
+        existing_refunds = RefundRequest.objects.filter(
+            order_item=value,
+            status__in=["PENDING", "APPROVED"]
+        )
+        if existing_refunds.exists():
+            raise serializers.ValidationError("A refund request already exists for this item.")
+
+        return value
+
+    def create(self, validated_data):
+        # Set the user as the current user
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
