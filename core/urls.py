@@ -21,7 +21,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from products.views import ProductViewSet, CategoryViewSet, get_categories, can_review_product, get_product_comments, get_product_ratings, get_pending_comments, approve_comment
-from orders.views import OrderViewSet, CartViewSet
+from orders.views import OrderViewSet, CartViewSet, RefundRequestViewSet
 from accounts.views import log_in, log_out, get_user, register, address_list, address_detail, set_main_address
 
 # Create a router and register our viewsets with it
@@ -30,6 +30,7 @@ router.register(r"products", ProductViewSet)
 router.register(r"categories", CategoryViewSet)
 router.register(r"orders", OrderViewSet, basename="order")
 router.register(r"carts", CartViewSet, basename="cart")
+router.register(r'refunds', RefundRequestViewSet, basename='refund')
 
 urlpatterns = [
     path("admin/", admin.site.urls),
