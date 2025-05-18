@@ -4,6 +4,7 @@ from django.conf import settings
 from products.models import Product
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 
 class Order(models.Model):
@@ -23,10 +24,10 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     shipping_address = models.TextField()
     address = models.ForeignKey(
-        "accounts.Address", 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        "accounts.Address",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="orders"
     )
     # Add payment information fields
@@ -102,3 +103,47 @@ def update_product_sales_count(sender, instance, **kwargs):
             product = item.product
             product.sales_count += item.quantity
             product.save(update_fields=["sales_count"])
+
+class RefundRequest(models.Model):
+    STATUS_CHOICES = (
+        ("PENDING", "Pending"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected")
+    )
+
+    order_item = models.ForeignKey("OrderItem", on_delete=models.CASCADE, related_name="refund_requests")
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="refund_requests")
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    approved_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_refunds"
+    )
+    approval_date = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"Refund Request #{self.id} - Order Item #{self.order_item_id}"
+
+    def approve(self, sales_manager):
+        """Approve the refund request"""
+        self.status = "APPROVED"
+        self.approved_by = sales_manager
+        self.approval_date = timezone.now()
+        self.save()
+
+    def reject(self, sales_manager, reason=""):
+        """Reject the refund request"""
+        self.status = "REJECTED"
+        self.approved_by = sales_manager  # Recording who rejected it too
+        self.approval_date = timezone.now()
+        self.rejection_reason = reason
+        self.save()
+
+    class Meta:
+        ordering = ['-created_at']
