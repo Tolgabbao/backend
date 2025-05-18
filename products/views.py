@@ -47,9 +47,19 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        result = super().perform_create(serializer)
-        return result
+    def perform_create(self,serializer):
+        user = self.request.user
+        if not user.is_authenticated:
+            raise PermissionError("User must be authenticated to create categories")
+
+        # Default: allow full save
+        if user.user_type == 'PRODUCT_MANAGER':
+            # Mark the product as invisible and unapproved until Sales Manager approves
+            serializer.save(is_visible=False, price_approved=False)
+        else:
+            serializer.save()  # Staff/Sales Manager can create normally
+
+        return
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -59,6 +69,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         result = super().perform_destroy(instance)
         return result
+
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -108,24 +119,24 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         result = serializer.save()
         return result
-    
+
     @action(detail=False, methods=["post"], url_path="add-product")
     def create_product_api(self, request):
         """Create a product via API (admin only)"""
         # Check permissions
         if not request.user.is_staff:
             return Response(
-                {"error": "Only staff can create products"}, 
+                {"error": "Only staff can create products"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             return Response(
-                serializer.data, 
-                status=status.HTTP_201_CREATED, 
+                serializer.data,
+                status=status.HTTP_201_CREATED,
                 headers=headers
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -316,13 +327,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = ProductCommentSerializer(data=request.data)
         if serializer.is_valid():
             comment = serializer.save(user=user, product=product)
-            
+
             return Response({
-                "message": "Comment submitted successfully and is pending approval", 
+                "message": "Comment submitted successfully and is pending approval",
                 "data": serializer.data
             })
         return Response(serializer.errors, status=400)
-        
+
     @action(detail=True, methods=["post"])
     def update_stock(self, request, pk=None):
         """Update product stock quantity (product manager only)"""
@@ -331,16 +342,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Only product managers can update stock"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         product = self.get_object()
         stock_quantity = request.data.get('stock_quantity')
-        
+
         if stock_quantity is None:
             return Response(
                 {"error": "Stock quantity is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         try:
             stock_quantity = int(stock_quantity)
             if stock_quantity < 0:
@@ -353,20 +364,20 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Stock quantity must be a valid number"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Check if product is going from out of stock to in stock
         current_stock = product.stock_quantity
         is_back_in_stock = current_stock == 0 and stock_quantity > 0
-        
+
         # Update stock quantity
         product.stock_quantity = stock_quantity
         product.save()
-        
+
         # If product is back in stock, notify users who have it in their wishlist
         if is_back_in_stock:
             from .tasks import notify_wishlist_back_in_stock
             notify_wishlist_back_in_stock.delay(product.id)
-        
+
         return Response(self.get_serializer(product).data)
     @action(detail=True, methods=["post"])
     def approve_comment(self, request, pk=None):
@@ -374,10 +385,10 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Check if user is staff or product manager
         if not (request.user.is_staff or request.user.user_type == 'PRODUCT_MANAGER'):
             return Response(
-                {"error": "Only staff and product managers can approve comments"}, 
+                {"error": "Only staff and product managers can approve comments"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         comment_id = request.data.get("comment_id")
         try:
             comment = ProductComment.objects.get(id=comment_id, product__id=pk)
@@ -470,12 +481,12 @@ class ProductViewSet(viewsets.ModelViewSet):
         if primary_image and primary_image.image:
             # Generate a cache key for this specific image
             cache_key = f"{PRODUCT_IMAGE_CACHE_KEY_PREFIX}{product.id}"
-            
+
             # Check if image is in cache
             cached_image = cache.get(cache_key)
             if cached_image:
                 return FileResponse(cached_image)
-                
+
             # If not in cache, store it
             image_file = primary_image.image.open()
             cache.set(cache_key, image_file, settings.CACHE_TTL)
@@ -489,35 +500,35 @@ class ProductViewSet(viewsets.ModelViewSet):
         """Add a product to the user's wishlist"""
         product = self.get_object()
         user = request.user
-        
+
         # Check if already in wishlist
         wishlist_item, created = Wishlist.objects.get_or_create(user=user, product=product)
-        
+
         if created:
             return Response({"message": f"{product.name} added to wishlist"}, status=status.HTTP_201_CREATED)
         else:
             return Response({"message": f"{product.name} is already in your wishlist"}, status=status.HTTP_200_OK)
-    
+
     @action(detail=True, methods=["delete"], permission_classes=[permissions.IsAuthenticated])
     def remove_from_wishlist(self, request, pk=None):
         """Remove a product from the user's wishlist"""
         product = self.get_object()
         user = request.user
-        
+
         try:
             wishlist_item = Wishlist.objects.get(user=user, product=product)
             wishlist_item.delete()
             return Response({"message": f"{product.name} removed from wishlist"}, status=status.HTTP_200_OK)
         except Wishlist.DoesNotExist:
             return Response({"error": "Product not in wishlist"}, status=status.HTTP_404_NOT_FOUND)
-    
+
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
     def my_wishlist(self, request):
         """Get the current user's wishlist"""
         wishlist = Wishlist.objects.filter(user=request.user).select_related('product')
         serializer = WishlistSerializer(wishlist, many=True, context={"request": request})
         return Response(serializer.data)
-        
+
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
     def set_discount(self, request, pk=None):
         """Set a discount on a product (sales manager only)"""
@@ -526,10 +537,10 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Only sales managers can set discounts"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         product = self.get_object()
         discount_percent = request.data.get("discount_percent", 0)
-        
+
         try:
             discount_percent = float(discount_percent)
             if discount_percent < 0 or discount_percent > 100:
@@ -537,29 +548,29 @@ class ProductViewSet(viewsets.ModelViewSet):
                     {"error": "Discount percentage must be between 0 and 100"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-                
+
             # If original price is not set, use current price
             if not product.original_price or product.original_price == 0:
                 product.original_price = product.price
-                
+
             # Update discount and recalculate price
             product.discount_percent = discount_percent
             product.save()  # The save method handles price calculation
-            
+
             # Notify users who have this product in their wishlist
             if discount_percent > 0:
                 from .tasks import notify_wishlist_discount
                 notify_wishlist_discount.delay(product.id, discount_percent)
-            
+
             serializer = self.get_serializer(product)
             return Response(serializer.data)
-            
+
         except ValueError:
             return Response(
                 {"error": "Invalid discount percentage"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
     def approve_price(self, request, pk=None):
         """Approve a product's price (sales manager only)"""
@@ -568,19 +579,19 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Only sales managers can approve prices"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         product = self.get_object()
-        
+
         if product.price <= 0:
             return Response(
                 {"error": "Cannot approve a product with price of 0 or less"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         product.price_approved = True
         product.is_visible = request.data.get("is_visible", True)  # Optionally make product visible
         product.save()
-        
+
         serializer = self.get_serializer(product)
         return Response(serializer.data)
 
@@ -592,16 +603,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Only sales managers can set discounts"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         product_ids = request.data.get("product_ids", [])
         discount_percent = request.data.get("discount_percent", 0)
-        
+
         if not product_ids:
             return Response(
                 {"error": "No products specified"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         try:
             discount_percent = float(discount_percent)
             if discount_percent < 0 or discount_percent > 100:
@@ -609,38 +620,38 @@ class ProductViewSet(viewsets.ModelViewSet):
                     {"error": "Discount percentage must be between 0 and 100"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-                
+
             # Get products that exist
             products = Product.objects.filter(id__in=product_ids)
-            
+
             if not products.exists():
                 return Response(
                     {"error": "None of the specified products were found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
-                
+
             updated_count = 0
             for product in products:
                 # If original price is not set, use current price
                 if not product.original_price or product.original_price == 0:
                     product.original_price = product.price
-                    
+
                 # Update discount
                 product.discount_percent = discount_percent
                 product.save()
                 updated_count += 1
-                
+
                 # Notify users who have this product in their wishlist
                 if discount_percent > 0:
                     from .tasks import notify_wishlist_discount
                     notify_wishlist_discount.delay(product.id, discount_percent)
-            
+
             return Response({
                 "message": f"Discount of {discount_percent}% applied to {updated_count} products",
                 "updated_products": updated_count,
                 "total_requested": len(product_ids)
             })
-                
+
         except ValueError:
             return Response(
                 {"error": "Invalid discount percentage"},
@@ -674,15 +685,15 @@ def get_pending_comments(request):
     """Get pending comments for admin approval"""
     if not request.user.is_staff and request.user.user_type != 'PRODUCT_MANAGER':
         return Response(
-            {"error": "Only staff and product managers can view pending comments"}, 
+            {"error": "Only staff and product managers can view pending comments"},
             status=status.HTTP_403_FORBIDDEN
         )
-        
+
     # Get all pending comments
     comments = ProductComment.objects.filter(is_approved=False).select_related(
         'product', 'user'
     ).order_by('-created_at')
-    
+
     serializer = ProductCommentSerializer(comments, many=True)
     return Response(serializer.data)
 
@@ -711,14 +722,14 @@ def can_review_product(request, product_id):
     """Check if user can review (rate or comment on) a product"""
     if not request.user.is_authenticated:
         return Response({"can_review": False})
-    
+
     # User can review if they have a delivered order containing this product
     can_review = Order.objects.filter(
-        user=request.user, 
-        items__product_id=product_id, 
+        user=request.user,
+        items__product_id=product_id,
         status="DELIVERED"
     ).exists()
-    
+
     return Response({"can_review": can_review})
 
 
@@ -727,10 +738,10 @@ def approve_comment(request, comment_id):
     """Approve a specific comment (admin or product manager only)"""
     if not (request.user.is_staff or request.user.user_type == 'PRODUCT_MANAGER'):
         return Response(
-            {"error": "Only staff and product managers can approve comments"}, 
+            {"error": "Only staff and product managers can approve comments"},
             status=status.HTTP_403_FORBIDDEN
         )
-        
+
     try:
         comment = ProductComment.objects.get(id=comment_id)
         comment.is_approved = True
