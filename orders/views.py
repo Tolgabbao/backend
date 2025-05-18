@@ -7,12 +7,13 @@ from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.http import HttpResponse # Import HttpResponse
-from .models import Order, OrderItem, Cart, CartItem
+from .models import Order, OrderItem, Cart, CartItem, RefundRequest
 from products.models import Product
 from .serializers import OrderSerializer, CartSerializer
 from .tasks import process_order, send_order_status_update, generate_order_pdf # Import generate_order_pdf
 from django.utils import timezone
 from datetime import datetime
+from .serializers import RefundRequestSerializer
 
 # Cache key patterns
 # Remove ORDER_LIST_CACHE_KEY_PREFIX and ORDER_DETAIL_CACHE_KEY_PREFIX
@@ -45,23 +46,23 @@ class OrderViewSet(viewsets.ModelViewSet):
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         # Create the order first
         order = serializer.save(user=request.user)
-        
+
         # Get the items from the request data
         items_data = request.data.get('items', [])
-        
+
         # Manually create order items
         for item_data in items_data:
             product_id = item_data.get('product')
             quantity = item_data.get('quantity', 1)
-            
+
             try:
                 product = Product.objects.get(id=product_id)
                 # Get the current price of the product
                 price_at_time = product.price
-                
+
                 # Create the order item
                 OrderItem.objects.create(
                     order=order,
@@ -69,24 +70,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                     quantity=quantity,
                     price_at_time=price_at_time
                 )
-                
+
             except Product.DoesNotExist:
                 # Log error but continue processing other items
                 print(f"Product with ID {product_id} not found")
-        
+
         # Remove order list cache clearing
-        
+
         # Clear cart cache since it will be emptied
         if request.user.is_authenticated:
             cache.delete(f"{CART_CACHE_KEY_PREFIX}user_{request.user.id}")
-        
+
         # Refresh the order to include created items in the response
         order.refresh_from_db()
         serializer = self.get_serializer(order)
-        
+
         # Process order asynchronously with Celery
         process_order.delay(order.id)
-        
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -116,7 +117,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         order.status = "CANCELLED"
         order.save()
-        return Response({"status": "order cancelled"})    
+        return Response({"status": "order cancelled"})
     @action(detail=True, methods=['get'], url_path='download-invoice')
     def download_invoice(self, request, pk=None):
         """
@@ -125,10 +126,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
 
         # Check if the user requesting is the owner of the order, admin/staff, or a manager
-        if not (request.user == order.user or 
-                request.user.is_staff or 
+        if not (request.user == order.user or
+                request.user.is_staff or
                 request.user.is_superuser or
-                request.user.user_type == 'PRODUCT_MANAGER' or 
+                request.user.user_type == 'PRODUCT_MANAGER' or
                 request.user.user_type == 'SALES_MANAGER'):
              return Response({"detail": "Not authorized to view this invoice."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -150,12 +151,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"error": "Only product managers can approve orders"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         order = self.get_object()
         order.is_approved = True
         order.status = 'IN_TRANSIT'
         order.save()
-        
+
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=['post'])
@@ -166,28 +167,28 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"error": "Only product managers can update delivery status"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         order = self.get_object()
         new_status = request.data.get('status')
         delivery_notes = request.data.get('delivery_notes', '')
-        
+
         if new_status not in dict(Order.STATUS_CHOICES):
             return Response(
                 {'error': 'Invalid status'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         order.status = new_status
         order.delivery_notes = delivery_notes
-        
+
         if new_status == 'DELIVERED':
             order.delivered_at = timezone.now()
-        
+
         order.save()
-        
+
         # Send status update notification
         send_order_status_update.delay(order.id, new_status)
-        
+
         return Response(self.get_serializer(order).data)
 
     @action(detail=False, methods=['get'])
@@ -198,7 +199,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"error": "Only product managers can view pending deliveries"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Get all orders with status 'IN_TRANSIT' or 'PROCESSING'
         orders = self.get_queryset().filter(
             status__in=['IN_TRANSIT', 'PROCESSING']
@@ -214,16 +215,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"error": "Only sales managers can view sales reports"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        
+
         if not start_date or not end_date:
             return Response(
                 {"error": "Both start_date and end_date are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             start_date = datetime.strptime(start_date, '%Y-%m-%d')
             end_date = datetime.strptime(end_date, '%Y-%m-%d')
@@ -232,18 +233,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"error": "Invalid date format. Use YYYY-MM-DD"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         orders = self.get_queryset().filter(
             created_at__range=[start_date, end_date],
             status__in=['DELIVERED', 'IN_TRANSIT']
         )
-        
+
         total_revenue = sum(order.total_amount for order in orders)
         total_cost = sum(
             sum(item.price_at_time * 0.5 * item.quantity for item in order.items.all())
             for order in orders
         )
-        
+
         report = {
             'total_orders': orders.count(),
             'total_revenue': total_revenue,
@@ -251,7 +252,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'total_profit': total_revenue - total_cost,
             'orders': self.get_serializer(orders, many=True).data
         }
-        
+
         return Response(report)
 
 
@@ -434,13 +435,158 @@ class CartViewSet(viewsets.ModelViewSet):
 
             # Delete all items in the cart
             cart.items.all().delete()
-            
+
             # Clear cache for this cart
             cache.delete(cache_key)
-            
+
             # Return empty cart
             serializer = CartSerializer(cart)
             return Response(serializer.data)
-            
+
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+
+class RefundRequestViewSet(viewsets.ModelViewSet):
+    serializer_class = RefundRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.user_type == 'SALES_MANAGER':
+            # Sales managers can see all refund requests
+            return RefundRequest.objects.all()
+        elif user.is_customer():
+            # Customers can only see their own refund requests
+            return RefundRequest.objects.filter(user=user)
+        return RefundRequest.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        """Create a new refund request"""
+        if not request.user.is_customer():
+            return Response({
+                "error": "Only customers can request refunds"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # Send notification asynchronously (if you have a notification system)
+        # notify_sales_managers_of_refund_request.delay(serializer.instance.id)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        """Customers can only update pending refund requests"""
+        refund_request = self.get_object()
+
+        if not request.user.is_customer():
+            return Response({
+                "error": "Only customers can update refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if refund_request.user != request.user:
+            return Response({
+                "error": "You can only update your own refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if refund_request.status != 'PENDING':
+            return Response({
+                "error": "Only pending refund requests can be updated"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """Customers can only cancel their own pending refund requests"""
+        refund_request = self.get_object()
+
+        if not request.user.is_customer():
+            return Response({
+                "error": "Only customers can cancel refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if refund_request.user != request.user:
+            return Response({
+                "error": "You can only cancel your own refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if refund_request.status != 'PENDING':
+            return Response({
+                "error": "Only pending refund requests can be canceled"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Sales manager approves a refund request"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response({
+                "error": "Only sales managers can approve refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        refund_request = self.get_object()
+
+        if refund_request.status != 'PENDING':
+            return Response({
+                "error": "Only pending refund requests can be approved"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Approve the refund request
+        refund_request.approve(request.user)
+
+        # Send notification asynchronously (if you have a notification system)
+        # notify_customer_refund_approved.delay(refund_request.id)
+
+        return Response(self.get_serializer(refund_request).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Sales manager rejects a refund request"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response({
+                "error": "Only sales managers can reject refund requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        refund_request = self.get_object()
+        rejection_reason = request.data.get('rejection_reason', '')
+
+        if refund_request.status != 'PENDING':
+            return Response({
+                "error": "Only pending refund requests can be rejected"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Reject the refund request
+        refund_request.reject(request.user, rejection_reason)
+
+        # Send notification asynchronously (if you have a notification system)
+        # notify_customer_refund_rejected.delay(refund_request.id)
+
+        return Response(self.get_serializer(refund_request).data)
+
+    @action(detail=False, methods=['get'])
+    def pending_refunds(self, request):
+        """Get all pending refund requests (for sales managers)"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response({
+                "error": "Only sales managers can view pending refunds list"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get all pending refund requests
+        refunds = RefundRequest.objects.filter(status='PENDING')
+        serializer = self.get_serializer(refunds, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def my_refunds(self, request):
+        """Get all refund requests for the current customer"""
+        if not request.user.is_customer():
+            return Response({
+                "error": "Only customers can view their refunds"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get all refund requests for this customer
+        refunds = RefundRequest.objects.filter(user=request.user)
+        serializer = self.get_serializer(refunds, many=True)
+        return Response(serializer.data)
