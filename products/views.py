@@ -61,10 +61,28 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
         return
 
-    def perform_update(self, serializer):
-        instance = serializer.instance
-        result = super().perform_update(serializer)
-        return result
+    def perform_update(self ,serializer):
+
+        user = self.request.user
+        product = serializer.instance
+
+        new_price_raw = serializer.validated_data.get('price')
+
+        try:
+            if new_price_raw is not None:
+                new_price = float(new_price_raw)
+
+                if new_price != float(product.price):
+                    # If a Product Manager is changing the price, revoke approval
+                    if user.user_type == 'PRODUCT_MANAGER':
+                        serializer.validated_data['price_approved'] = False
+                        serializer.validated_data['is_visible'] = False  # optionally hide it until approved
+
+        except (ValueError, TypeError):
+            # Handle invalid price input gracefully
+            pass
+        # Save the updated product now
+        return super().perform_update(serializer)
 
     def perform_destroy(self, instance):
         result = super().perform_destroy(instance)
