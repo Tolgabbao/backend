@@ -160,9 +160,15 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_update(self, serializer):
-        instance = serializer.instance
-        result = super().perform_update(serializer)
-        return result
+        user = self.request.user
+        product = serializer.instance
+
+        if user.user_type == 'PRODUCT_MANAGER' and not user.is_staff:
+            # Restrict visibility and price approval for Product Manager edits
+            serializer.validated_data['is_visible'] = False
+            serializer.validated_data['price_approved'] = False
+
+        return super().perform_update(serializer)
 
     def perform_destroy(self, instance):
         result = super().perform_destroy(instance)
