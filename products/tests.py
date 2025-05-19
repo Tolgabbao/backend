@@ -7,13 +7,14 @@ from django.core.cache import cache
 from unittest.mock import patch, MagicMock
 
 from accounts.models import User
-from products.models import Category, Product, ProductImage, ProductRating, ProductComment
+from products.models import Category, Product, ProductImage, ProductRating, ProductComment, Wishlist
 from products.serializers import (
     CategorySerializer, 
     ProductSerializer, 
     ProductImageSerializer,
     ProductRatingSerializer,
-    ProductCommentSerializer
+    ProductCommentSerializer,
+    WishlistSerializer
 )
 from decimal import Decimal
 import io
@@ -619,3 +620,364 @@ class ProductAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['results']), 1)
         self.assertEqual(response.data['results'][0]['name'], "Electronics")
+
+
+class WishlistModelTest(TestCase):
+    """Tests for Wishlist model"""
+    
+    def setUp(self):
+        # Create a user
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpassword",
+            user_type="CUSTOMER",
+            address="Test Address"
+        )
+        
+        # Create a category
+        self.category = Category.objects.create(
+            name="Test Category",
+            description="Test Category Description"
+        )
+        
+        # Create products
+        self.product1 = Product.objects.create(
+            name="Test Product 1",
+            model="Test Model 1",
+            serial_number="TEST123456",
+            description="Test Description 1",
+            price=10.00,
+            cost_price=5.00,
+            stock_quantity=10,
+            category=self.category,
+            distributor_info="Test Distributor"
+        )
+        
+        self.product2 = Product.objects.create(
+            name="Test Product 2",
+            model="Test Model 2",
+            serial_number="TEST789012",
+            description="Test Description 2",
+            price=20.00,
+            cost_price=10.00,
+            stock_quantity=5,
+            category=self.category,
+            distributor_info="Test Distributor"
+        )
+        
+    def test_wishlist_creation(self):
+        """Test creating a wishlist item"""
+        wishlist_item = Wishlist.objects.create(
+            user=self.user,
+            product=self.product1
+        )
+        
+        self.assertEqual(wishlist_item.user, self.user)
+        self.assertEqual(wishlist_item.product, self.product1)
+        self.assertIsNotNone(wishlist_item.created_at)
+        self.assertIsNotNone(wishlist_item.updated_at)
+    
+    def test_wishlist_string_representation(self):
+        """Test the string representation of the wishlist item"""
+        wishlist_item = Wishlist.objects.create(
+            user=self.user,
+            product=self.product1
+        )
+        
+        expected_string = f"{self.user.username}'s wishlist - {self.product1.name}"
+        self.assertEqual(str(wishlist_item), expected_string)
+    
+    def test_wishlist_unique_constraint(self):
+        """Test that a user cannot add the same product to their wishlist twice"""
+        Wishlist.objects.create(
+            user=self.user,
+            product=self.product1
+        )
+        
+        # Trying to create the same wishlist item again should raise an IntegrityError
+        from django.db.utils import IntegrityError
+        with self.assertRaises(IntegrityError):
+            Wishlist.objects.create(
+                user=self.user,
+                product=self.product1
+            )
+    
+    def test_multiple_wishlist_items(self):
+        """Test that a user can have multiple products in their wishlist"""
+        wishlist_item1 = Wishlist.objects.create(
+            user=self.user,
+            product=self.product1
+        )
+        
+        wishlist_item2 = Wishlist.objects.create(
+            user=self.user,
+            product=self.product2
+        )
+        
+        user_wishlist = Wishlist.objects.filter(user=self.user)
+        self.assertEqual(user_wishlist.count(), 2)
+        self.assertIn(wishlist_item1, user_wishlist)
+        self.assertIn(wishlist_item2, user_wishlist)
+
+
+class WishlistSerializerTest(TestCase):
+    """Tests for WishlistSerializer"""
+    
+    def setUp(self):
+        # Create a user
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpassword",
+            user_type="CUSTOMER",
+            address="Test Address"
+        )
+        
+        # Create a category
+        self.category = Category.objects.create(
+            name="Test Category",
+            description="Test Category Description"
+        )
+        
+        # Create a product
+        self.product = Product.objects.create(
+            name="Test Product",
+            model="Test Model",
+            serial_number="TEST123456",
+            description="Test Description",
+            price=10.00,
+            cost_price=5.00,
+            stock_quantity=10,
+            category=self.category,
+            distributor_info="Test Distributor"
+        )
+        
+        # Create a wishlist item
+        self.wishlist_item = Wishlist.objects.create(
+            user=self.user,
+            product=self.product
+        )
+    
+    def test_wishlist_serializer(self):
+        """Test that the wishlist serializer correctly serializes a wishlist item"""
+        serializer = WishlistSerializer(self.wishlist_item)
+        
+        self.assertEqual(serializer.data['id'], self.wishlist_item.id)
+        self.assertEqual(serializer.data['user'], self.user.id)
+        self.assertTrue('product_details' in serializer.data)
+        
+        # Check that product is write_only
+        self.assertFalse('product' in serializer.data)
+    
+    def test_wishlist_serializer_with_product_details(self):
+        """Test that product_details includes essential product information"""
+        serializer = WishlistSerializer(self.wishlist_item)
+        
+        product_details = serializer.data['product_details']
+        self.assertEqual(product_details['id'], self.product.id)
+        self.assertEqual(product_details['name'], self.product.name)
+        self.assertEqual(float(product_details['price']), float(self.product.price))
+    
+    def test_product_serializer_in_wishlist_property(self):
+        """Test that the ProductSerializer sets in_wishlist property correctly"""
+        # Create request mock with authenticated user
+        class MockRequest:
+            def __init__(self, user):
+                self.user = user
+        
+        # Test with a product in wishlist
+        context = {'request': MockRequest(self.user)}
+        serializer = ProductSerializer(self.product, context=context)
+        self.assertTrue(serializer.data['in_wishlist'])
+        
+        # Test with a product not in wishlist
+        product2 = Product.objects.create(
+            name="Test Product 2",
+            model="Test Model 2",
+            serial_number="TEST789012",
+            description="Test Description 2",
+            price=20.00,
+            cost_price=10.00,
+            stock_quantity=5,
+            category=self.category,
+            distributor_info="Test Distributor"
+        )
+        serializer = ProductSerializer(product2, context=context)
+        self.assertFalse(serializer.data['in_wishlist'])
+        
+        # Test with anonymous user
+        context = {'request': MockRequest(user=type('obj', (object,), {'is_authenticated': False}))}
+        serializer = ProductSerializer(self.product, context=context)
+        self.assertFalse(serializer.data['in_wishlist'])
+
+
+class WishlistAPITest(APITestCase):
+    """Tests for wishlist API endpoints"""
+    
+    def setUp(self):
+        # Create users
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="testpassword",
+            user_type="CUSTOMER",
+            address="Test Address"
+        )
+        
+        self.another_user = User.objects.create_user(
+            username="anotheruser",
+            email="another@example.com",
+            password="testpassword",
+            user_type="CUSTOMER",
+            address="Another Address"
+        )
+        
+        # Create a category
+        self.category = Category.objects.create(
+            name="Test Category",
+            description="Test Category Description"
+        )
+        
+        # Create products
+        self.product1 = Product.objects.create(
+            name="Test Product 1",
+            model="Test Model 1",
+            serial_number="TEST123456",
+            description="Test Description 1",
+            price=10.00,
+            cost_price=5.00,
+            stock_quantity=10,
+            category=self.category,
+            distributor_info="Test Distributor",
+            is_visible=True,
+            price_approved=True
+        )
+        
+        self.product2 = Product.objects.create(
+            name="Test Product 2",
+            model="Test Model 2",
+            serial_number="TEST789012",
+            description="Test Description 2",
+            price=20.00,
+            cost_price=10.00,
+            stock_quantity=5,
+            category=self.category,
+            distributor_info="Test Distributor",
+            is_visible=True,
+            price_approved=True
+        )
+        
+        # Create a wishlist item for another_user
+        self.another_user_wishlist = Wishlist.objects.create(
+            user=self.another_user,
+            product=self.product2
+        )
+        
+        # Create URLs
+        self.add_to_wishlist_url = reverse('product-add-to-wishlist', args=[self.product1.id])
+        self.remove_from_wishlist_url = reverse('product-remove-from-wishlist', args=[self.product1.id])
+        self.my_wishlist_url = reverse('product-my-wishlist')
+    
+    def test_add_to_wishlist_authenticated(self):
+        """Test that an authenticated user can add a product to their wishlist"""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.add_to_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("added to wishlist", response.data['message'])
+        
+        # Verify that the item was added to the database
+        self.assertTrue(Wishlist.objects.filter(user=self.user, product=self.product1).exists())
+    
+    def test_add_to_wishlist_already_exists(self):
+        """Test adding a product that's already in the wishlist"""
+        # First, add the product
+        Wishlist.objects.create(user=self.user, product=self.product1)
+        
+        # Then try to add it again
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.add_to_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("already in your wishlist", response.data['message'])
+        
+        # Verify only one entry exists
+        self.assertEqual(Wishlist.objects.filter(user=self.user, product=self.product1).count(), 1)
+    
+    def test_add_to_wishlist_unauthenticated(self):
+        """Test that an unauthenticated user cannot add a product to a wishlist"""
+        response = self.client.post(self.add_to_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Verify no wishlist item was created
+        self.assertEqual(Wishlist.objects.filter(product=self.product1).count(), 0)
+    
+    def test_remove_from_wishlist(self):
+        """Test removing a product from the wishlist"""
+        # First, add a product to the wishlist
+        Wishlist.objects.create(user=self.user, product=self.product1)
+        
+        # Then remove it
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.remove_from_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("removed from wishlist", response.data['message'])
+        
+        # Verify it was removed from the database
+        self.assertFalse(Wishlist.objects.filter(user=self.user, product=self.product1).exists())
+    
+    def test_remove_from_wishlist_not_in_wishlist(self):
+        """Test removing a product that's not in the wishlist"""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.remove_from_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("not in wishlist", response.data['error'])
+    
+    def test_my_wishlist(self):
+        """Test getting the current user's wishlist"""
+        # Add products to the user's wishlist
+        Wishlist.objects.create(user=self.user, product=self.product1)
+        Wishlist.objects.create(user=self.user, product=self.product2)
+        
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.my_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        
+        # Check that product details are included
+        product_ids = [item['product_details']['id'] for item in response.data]
+        self.assertIn(self.product1.id, product_ids)
+        self.assertIn(self.product2.id, product_ids)
+    
+    def test_my_wishlist_empty(self):
+        """Test getting an empty wishlist"""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.my_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)
+    
+    def test_my_wishlist_unauthenticated(self):
+        """Test that an unauthenticated user cannot access the wishlist"""
+        response = self.client.get(self.my_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    
+    def test_wishlist_user_isolation(self):
+        """Test that users can only see their own wishlist items"""
+        # Add a product to the test user's wishlist
+        Wishlist.objects.create(user=self.user, product=self.product1)
+        
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.my_wishlist_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        
+        # Verify the product from another user's wishlist is not included
+        product_ids = [item['product_details']['id'] for item in response.data]
+        self.assertNotIn(self.another_user_wishlist.product.id, product_ids)
