@@ -126,15 +126,23 @@ class RefundRequest(models.Model):
     )
     approval_date = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
-
+    
     def __str__(self):
         return f"Refund Request #{self.id} - Order Item #{self.order_item_id}"
-
+        
     def approve(self, sales_manager):
         """Approve the refund request"""
         self.status = "APPROVED"
         self.approved_by = sales_manager
         self.approval_date = timezone.now()
+        
+        # When refund is approved, add the item back to stock
+        if self.order_item and self.order_item.product:
+            # Increase product stock
+            product = self.order_item.product
+            product.stock_quantity += self.order_item.quantity
+            product.save()
+            
         self.save()
 
     def reject(self, sales_manager, reason=""):

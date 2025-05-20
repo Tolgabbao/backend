@@ -553,7 +553,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = WishlistSerializer(wishlist, many=True, context={"request": request})
         return Response(serializer.data)
 
-    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def set_discount(self, request, pk=None):
         """Set a discount on a product (sales manager only)"""
         if request.user.user_type != 'SALES_MANAGER':
@@ -595,7 +595,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def approve_price(self, request, pk=None):
         """Approve a product's price (sales manager only)"""
         if request.user.user_type != 'SALES_MANAGER':
@@ -619,7 +619,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(product)
         return Response(serializer.data)
 
-    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAdminUser])
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def bulk_discount(self, request):
         """Apply discount to multiple products at once (sales manager only)"""
         if request.user.user_type != 'SALES_MANAGER':

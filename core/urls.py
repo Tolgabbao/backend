@@ -26,7 +26,7 @@ from accounts.views import log_in, log_out, get_user, register, address_list, ad
 
 # Create a router and register our viewsets with it
 router = DefaultRouter()
-router.register(r"products", ProductViewSet)
+router.register(r"products", ProductViewSet, basename="product")
 router.register(r"categories", CategoryViewSet)
 router.register(r"orders", OrderViewSet, basename="order")
 router.register(r"carts", CartViewSet, basename="cart")

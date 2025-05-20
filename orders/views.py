@@ -449,7 +449,7 @@ class CartViewSet(viewsets.ModelViewSet):
 class RefundRequestViewSet(viewsets.ModelViewSet):
     serializer_class = RefundRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
-
+    
     def get_queryset(self):
         user = self.request.user
         if user.user_type == 'SALES_MANAGER':
@@ -459,7 +459,7 @@ class RefundRequestViewSet(viewsets.ModelViewSet):
             # Customers can only see their own refund requests
             return RefundRequest.objects.filter(user=user)
         return RefundRequest.objects.none()
-
+        
     def create(self, request, *args, **kwargs):
         """Create a new refund request"""
         if not request.user.is_customer():
@@ -471,8 +471,9 @@ class RefundRequestViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        # Send notification asynchronously (if you have a notification system)
-        # notify_sales_managers_of_refund_request.delay(serializer.instance.id)
+        # Send notification asynchronously to sales managers
+        from .tasks import notify_sales_managers_of_refund_request
+        notify_sales_managers_of_refund_request.delay(serializer.instance.id)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -516,8 +517,8 @@ class RefundRequestViewSet(viewsets.ModelViewSet):
                 "error": "Only pending refund requests can be canceled"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        return super().destroy(request, *args, **kwargs)
-
+        return super().destroy(request, *args, **kwargs)    
+    
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         """Sales manager approves a refund request"""
@@ -536,11 +537,12 @@ class RefundRequestViewSet(viewsets.ModelViewSet):
         # Approve the refund request
         refund_request.approve(request.user)
 
-        # Send notification asynchronously (if you have a notification system)
-        # notify_customer_refund_approved.delay(refund_request.id)
+        # Send notification asynchronously
+        from .tasks import notify_refund_approved
+        notify_refund_approved.delay(refund_request.id)
 
-        return Response(self.get_serializer(refund_request).data)
-
+        return Response(self.get_serializer(refund_request).data)    
+    
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         """Sales manager rejects a refund request"""
@@ -560,8 +562,9 @@ class RefundRequestViewSet(viewsets.ModelViewSet):
         # Reject the refund request
         refund_request.reject(request.user, rejection_reason)
 
-        # Send notification asynchronously (if you have a notification system)
-        # notify_customer_refund_rejected.delay(refund_request.id)
+        # Send notification asynchronously
+        from .tasks import notify_refund_rejected
+        notify_refund_rejected.delay(refund_request.id)
 
         return Response(self.get_serializer(refund_request).data)
 

@@ -7,7 +7,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import Table, TableStyle
-from .models import Order # Import Order model at the top
+from .models import Order, RefundRequest # Import Order and RefundRequest models at the top
 
 def generate_order_pdf(order: Order) -> BytesIO:
     """Generates a PDF invoice for the given order."""
@@ -157,3 +157,104 @@ def send_order_status_update(order_id, new_status):
     )
 
     return f"Status update email sent for order {order_id}"
+
+
+@shared_task
+def notify_refund_approved(refund_id):
+    """Send email notification for approved refund request"""
+    from .models import RefundRequest
+    try:
+        refund = RefundRequest.objects.get(id=refund_id)
+        order = refund.order_item.order
+        product = refund.order_item.product
+        
+        subject = f"Refund Request for Order #{order.id} Approved"
+        message = f"""
+Dear {refund.user.username},
+
+Your refund request for {product.name} from Order #{order.id} has been approved.
+
+Refund amount: ${float(refund.order_item.price_at_time * refund.order_item.quantity):.2f}
+
+The refunded amount is the same as the price you paid at the time of purchase.
+
+If you have any questions, please contact our customer service.
+
+Thank you for shopping with us!
+"""
+        from_email = settings.DEFAULT_FROM_EMAIL
+        recipient_list = [refund.user.email]
+        
+        send_mail(subject, message, from_email, recipient_list)
+        
+    except RefundRequest.DoesNotExist:
+        print(f"Refund with ID {refund_id} not found")
+    
+    return f"Refund approval notification sent for refund {refund_id}"
+
+@shared_task
+def notify_refund_rejected(refund_id):
+    """Send email notification for rejected refund request"""
+    from .models import RefundRequest
+    try:
+        refund = RefundRequest.objects.get(id=refund_id)
+        order = refund.order_item.order
+        product = refund.order_item.product
+        
+        subject = f"Refund Request for Order #{order.id} Rejected"
+        message = f"""
+Dear {refund.user.username},
+
+We regret to inform you that your refund request for {product.name} from Order #{order.id} has been rejected.
+
+Reason for rejection: {refund.rejection_reason}
+
+If you have any questions or would like to appeal this decision, please contact our customer service.
+
+Thank you for your understanding.
+"""
+        from_email = settings.DEFAULT_FROM_EMAIL
+        recipient_list = [refund.user.email]
+        
+        send_mail(subject, message, from_email, recipient_list)
+        
+    except RefundRequest.DoesNotExist:
+        print(f"Refund with ID {refund_id} not found")
+    
+    return f"Refund rejection notification sent for refund {refund_id}"
+
+@shared_task
+def notify_sales_managers_of_refund_request(refund_id):
+    """Notify sales managers of new refund request"""
+    from .models import RefundRequest
+    from accounts.models import User
+    try:
+        refund = RefundRequest.objects.get(id=refund_id)
+        order = refund.order_item.order
+        product = refund.order_item.product
+        
+        subject = f"New Refund Request for Order #{order.id}"
+        message = f"""
+A new refund request has been submitted:
+
+Order: #{order.id}
+Product: {product.name}
+Customer: {refund.user.username}
+Reason: {refund.reason}
+Requested on: {refund.created_at.strftime('%Y-%m-%d %H:%M')}
+
+Please review this request in the admin panel.
+"""
+        from_email = settings.DEFAULT_FROM_EMAIL
+        
+        # Get all sales managers' emails
+        sales_managers = User.objects.filter(user_type='SALES_MANAGER')
+        recipient_list = [user.email for user in sales_managers if user.email]
+        
+        if recipient_list:
+            send_mail(subject, message, from_email, recipient_list)
+        
+    except RefundRequest.DoesNotExist:
+        print(f"Refund with ID {refund_id} not found")
+    
+    return f"Sales managers notified of refund request {refund_id}"
