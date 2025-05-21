@@ -80,4 +80,9 @@ urlpatterns = [
         approve_comment,
         name="approve_comment",
     ),
+    path(
+        "api/products/<int:product_id>/comment_product/",
+        ProductViewSet.comment_product,
+        name="comment_product",
+    ),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

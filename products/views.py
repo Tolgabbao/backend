@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse, FileResponse, Http404
 from django.core.cache import cache
 from django.views.decorators.cache import cache_page
 from django.conf import settings
@@ -55,7 +55,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         # Default: allow full save
         if user.user_type == 'PRODUCT_MANAGER':
             # Mark the product as invisible and unapproved until Sales Manager approves
-            serializer.save(is_visible=False, price_approved=False)
+            serializer.save()
         else:
             serializer.save()  # Staff/Sales Manager can create normally
 
@@ -129,13 +129,21 @@ class ProductViewSet(viewsets.ModelViewSet):
         return queryset
 
     def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
+        return super().list(request, *args, **kwargs)    
+    
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
-
+        
     def perform_create(self, serializer):
-        result = serializer.save()
+        user = self.request.user
+        
+        # If the user is a Product Manager, set price_approved=False and is_visible=False
+        if user.user_type == 'PRODUCT_MANAGER':
+            result = serializer.save(price_approved=False, is_visible=False)
+        else:
+            # Staff or Sales Manager can create products that are visible by default
+            result = serializer.save()
+            
         return result
 
     @action(detail=False, methods=["post"], url_path="add-product")
@@ -334,7 +342,9 @@ class ProductViewSet(viewsets.ModelViewSet):
             update_product_ratings.delay(product.id)
 
             return Response({"message": message, "data": serializer.data})
-        return Response(serializer.errors, status=400)    @action(detail=True, methods=["post"])
+        return Response(serializer.errors, status=400)    
+    
+    @action(detail=True, methods=["post"])
     def comment_product(self, request, pk=None):
         product = self.get_object()
         user = request.user
@@ -604,20 +614,27 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        product = self.get_object()
+        try:
+            # Instead of using get_object which might be raising Http404
+            product = Product.objects.get(pk=pk)
+            
+            if product.price <= 0:
+                return Response(
+                    {"error": "Cannot approve a product with price of 0 or less"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            product.price_approved = True
+            product.is_visible = request.data.get("is_visible", True)  # Optionally make product visible
+            product.save()
 
-        if product.price <= 0:
+            serializer = self.get_serializer(product)
+            return Response(serializer.data)
+        except Product.DoesNotExist:
             return Response(
-                {"error": "Cannot approve a product with price of 0 or less"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"Product with ID {pk} not found"},
+                status=status.HTTP_404_NOT_FOUND
             )
-
-        product.price_approved = True
-        product.is_visible = request.data.get("is_visible", True)  # Optionally make product visible
-        product.save()
-
-        serializer = self.get_serializer(product)
-        return Response(serializer.data)
 
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def bulk_discount(self, request):
@@ -681,6 +698,72 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"error": "Invalid discount percentage"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def pending_price_approval(self, request):
+        """Get products pending price approval (for sales managers)"""
+        if request.user.user_type != 'SALES_MANAGER':
+            return Response(
+                {"error": "Only sales managers can view products pending price approval"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get all products that need price approval
+        products = Product.objects.filter(price_approved=False)
+        serializer = self.get_serializer(products, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def set_price(self, request, pk=None):
+        """Set a product's price (sales manager or product manager only)"""
+        if not (request.user.user_type == 'SALES_MANAGER' or request.user.user_type == 'PRODUCT_MANAGER'):
+            return Response(
+                {"error": "Only sales managers and product managers can set prices"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            product = Product.objects.get(pk=pk)
+            price = request.data.get('price')
+            
+            if price is None:
+                return Response(
+                    {"error": "Price is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            try:
+                price = float(price)
+                if price <= 0:
+                    return Response(
+                        {"error": "Price must be greater than 0"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Invalid price value"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Set the original price
+            product.original_price = price
+            
+            # If price is changed by Product Manager, mark it for approval
+            if request.user.user_type == 'PRODUCT_MANAGER':
+                product.price_approved = False
+                product.is_visible = False
+            
+            product.save()
+            
+            serializer = ProductSerializer(product)
+            return Response(serializer.data)
+            
+        except Product.DoesNotExist:
+            return Response(
+                {"error": f"Product with ID {pk} not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
 
 
 @api_view(["GET"])
