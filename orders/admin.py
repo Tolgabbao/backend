@@ -4,7 +4,33 @@ from .models import Cart, RefundRequest
 
 from .models import Order
 
-admin.site.register(Order)
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'user',
+        'status',
+        'created_at',
+        'updated_at'
+    )
+    list_filter = ('status', 'created_at')
+    search_fields = ('user__username',)
+
+    def total_price(self, obj):
+        return obj.total
+    total_price.short_description = 'Total Price'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('items__product')
+    
+    
+    def has_change_permission(self, request, obj=None):
+        return True
+    
+    
+
+
 
 
 admin.site.register(Cart)

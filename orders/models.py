@@ -20,7 +20,9 @@ class Order(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="PROCESSING"
     )
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Add cost_price as an actual field
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     shipping_address = models.TextField()
     address = models.ForeignKey(
@@ -41,6 +43,12 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order {self.id} - {self.user.username}"
+    
+    def calculate_cost_price(self):
+        """
+        Calculate the cost price of the order based on the items in the order.
+        """
+        return sum(item.cost_price * item.quantity for item in self.items.all())
 
     class Meta:
         ordering = ['-created_at']
@@ -51,6 +59,7 @@ class OrderItem(models.Model):
     product = models.ForeignKey("products.Product", on_delete=models.CASCADE)
     quantity = models.IntegerField(validators=[MinValueValidator(1)])
     price_at_time = models.DecimalField(max_digits=10, decimal_places=2)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
 
 
 class Cart(models.Model):

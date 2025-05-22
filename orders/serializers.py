@@ -27,6 +27,9 @@ class OrderSerializer(serializers.ModelSerializer):
     total_amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=True
     )
+    cost_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
     status = serializers.ChoiceField(
         choices=Order.STATUS_CHOICES, default="PROCESSING", read_only=True
     )
@@ -38,18 +41,22 @@ class OrderSerializer(serializers.ModelSerializer):
     user = serializers.HiddenField(
         default=serializers.CurrentUserDefault(), write_only=True
     )
+    # Add username and customer name fields
+    username = serializers.CharField(source='user.username', read_only=True)
+    customer_name = serializers.SerializerMethodField(read_only=True)
     payment_info = serializers.JSONField(write_only=True, required=True)
     card_last_four = serializers.CharField(max_length=4, write_only=True, required=False)
     card_holder = serializers.CharField(max_length=100, write_only=True, required=False)
     expiry_date = serializers.CharField(max_length=5, write_only=True, required=False)  # MM/YY format
     address_details = serializers.SerializerMethodField(read_only=True)
-
+    
     class Meta:
         model = Order
         fields = [
             "id",
             "status",
             "total_amount",
+            "cost_price",
             "created_at",
             "shipping_address",
             "address_id",
@@ -57,6 +64,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
             "items_to_create",
             "user",
+            "username",
+            "customer_name",
             "card_last_four",
             "card_holder",
             "expiry_date",
@@ -80,6 +89,9 @@ class OrderSerializer(serializers.ModelSerializer):
                 "country": obj.address.country
             }
         return None
+
+    def get_customer_name(self, obj):
+        return obj.user.get_full_name()  # Assuming the User model has a get_full_name method
 
     def validate(self, data):
         # Ensure total_amount is provided

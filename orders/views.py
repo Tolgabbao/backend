@@ -13,6 +13,7 @@ from .serializers import OrderSerializer, CartSerializer
 from .tasks import process_order, send_order_status_update, generate_order_pdf # Import generate_order_pdf
 from django.utils import timezone
 from datetime import datetime
+from decimal import Decimal
 from .serializers import RefundRequestSerializer
 
 # Cache key patterns
@@ -37,12 +38,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     # Remove cache decorator
     def list(self, request, *args, **kwargs):
         # Remove cache clearing code
-        return super().list(request, *args, **kwargs)
-
-    # Remove cache decorator
+        return super().list(request, *args, **kwargs)    # Remove cache decorator
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
-
+        
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -53,27 +52,38 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Get the items from the request data
         items_data = request.data.get('items', [])
 
+        # Track total cost price
+        total_cost_price = 0
+
         # Manually create order items
         for item_data in items_data:
             product_id = item_data.get('product')
             quantity = item_data.get('quantity', 1)
 
             try:
-                product = Product.objects.get(id=product_id)
-                # Get the current price of the product
+                product = Product.objects.get(id=product_id)                # Get the current price of the product
                 price_at_time = product.price
+                # Assuming product has cost_price field, otherwise use purchase_price or default to 70% of price
+                cost_price = getattr(product, 'cost_price', getattr(product, 'purchase_price', price_at_time * Decimal('0.7')))
 
-                # Create the order item
-                OrderItem.objects.create(
+                # Create the order item with cost_price
+                order_item = OrderItem.objects.create(
                     order=order,
                     product=product,
                     quantity=quantity,
-                    price_at_time=price_at_time
+                    price_at_time=price_at_time,
+                    cost_price=cost_price
                 )
+                  # Add to total cost price
+                total_cost_price += cost_price * Decimal(str(quantity))
 
             except Product.DoesNotExist:
                 # Log error but continue processing other items
                 print(f"Product with ID {product_id} not found")
+                
+        # Update order with the calculated cost price
+        order.cost_price = total_cost_price
+        order.save(update_fields=['cost_price'])
 
         # Remove order list cache clearing
 
@@ -240,10 +250,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         total_revenue = sum(order.total_amount for order in orders)
-        total_cost = sum(
-            sum(item.price_at_time * 0.5 * item.quantity for item in order.items.all())
-            for order in orders
-        )
+        total_cost = sum(order.cost_price for order in orders)
 
         report = {
             'total_orders': orders.count(),
